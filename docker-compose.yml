@@ -1,0 +1,98 @@
+version: '3.8'
+
+services:
+  # Ollama service for local LLMs
+  ollama:
+    image: ollama/ollama:latest
+    container_name: sc-gen5-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    restart: unless-stopped
+    networks:
+      - sc-gen5-network
+
+  # SC Gen 5 Consult Service
+  consult-service:
+    build: .
+    container_name: sc-gen5-consult
+    ports:
+      - "8000:8000"
+    volumes:
+      - sc_data:/app/data
+    environment:
+      - SC_OLLAMA_URL=http://ollama:11434
+      - SC_DATA_DIR=/app/data
+      - SC_VECTOR_DB_PATH=/app/data/vector_db
+      - SC_METADATA_PATH=/app/data/metadata.json
+      - SC_LOG_LEVEL=INFO
+      # Add your API keys here or use .env file
+      # - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      # - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # - CH_API_KEY=${CH_API_KEY}
+    depends_on:
+      - ollama
+    restart: unless-stopped
+    networks:
+      - sc-gen5-network
+    command: ["python", "-m", "uvicorn", "sc_gen5.services.consult_service:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  # SC Gen 5 Companies House Ingest Service  
+  ingest-service:
+    build: .
+    container_name: sc-gen5-ingest
+    ports:
+      - "8001:8001"
+    volumes:
+      - sc_data:/app/data
+    environment:
+      - SC_DATA_DIR=/app/data
+      - SC_VECTOR_DB_PATH=/app/data/vector_db
+      - SC_METADATA_PATH=/app/data/metadata.json
+      - SC_LOG_LEVEL=INFO
+      # - CH_API_KEY=${CH_API_KEY}
+    restart: unless-stopped
+    networks:
+      - sc-gen5-network
+    command: ["python", "-m", "uvicorn", "sc_gen5.services.ch_ingest_service:app", "--host", "0.0.0.0", "--port", "8001"]
+
+  # SC Gen 5 Streamlit UI
+  streamlit-ui:
+    build: .
+    container_name: sc-gen5-ui
+    ports:
+      - "8501:8501"
+    volumes:
+      - sc_data:/app/data
+    environment:
+      - SC_DATA_DIR=/app/data
+      - SC_VECTOR_DB_PATH=/app/data/vector_db
+      - SC_METADATA_PATH=/app/data/metadata.json
+      - SC_OLLAMA_URL=http://ollama:11434
+      - SC_LOG_LEVEL=INFO
+      # Add your API keys here or use .env file
+      # - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      # - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # - CH_API_KEY=${CH_API_KEY}
+    depends_on:
+      - ollama
+      - consult-service
+    restart: unless-stopped
+    networks:
+      - sc-gen5-network
+    command: ["streamlit", "run", "src/sc_gen5/ui/app.py", "--server.address", "0.0.0.0", "--server.port", "8501"]
+
+volumes:
+  ollama_data:
+    driver: local
+  sc_data:
+    driver: local
+
+networks:
+  sc-gen5-network:
+    driver: bridge 

@@ -1,0 +1,102 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sc-gen5"
+version = "5.0.0"
+description = "Strategic Counsel Gen 5 - Local-first legal research assistant"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Strategic Counsel", email = "contact@strategiccounsel.ai"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Legal",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "fastapi>=0.104.1",
+    "uvicorn[standard]>=0.24.0",
+    "streamlit>=1.28.0",
+    "sentence-transformers>=2.2.2",
+    "faiss-cpu>=1.7.4",
+    "PyPDF2>=3.0.1",
+    "pdf2image>=1.16.3",
+    "pytesseract>=0.3.10",
+    "Pillow>=10.0.1",
+    "requests>=2.31.0",
+    "python-multipart>=0.0.6",
+    "python-dotenv>=1.0.0",
+    "openai>=1.3.0",
+    "google-generativeai>=0.3.0",
+    "anthropic>=0.7.0",
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+    "pydantic>=2.4.0",
+    "tiktoken>=0.5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.6.0",
+    "types-requests>=2.31.0",
+]
+enhanced = [
+    "paddlepaddle-cpu>=2.5.2",
+    "paddleocr>=2.7.0",
+    "FlagEmbedding>=1.2.0",
+]
+
+[project.scripts]
+sc-gen5-serve = "sc_gen5.services.consult_service:main"
+sc-gen5-ui = "sc_gen5.ui.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 119
+target-version = ['py310']
+include = '\.pyi?$'
+
+[tool.ruff]
+line-length = 119
+target-version = "py310"
+select = ["E", "F", "W", "C90", "I", "N", "D", "UP", "YTT", "S", "B", "A", "COM", "C4", "DTZ", "T10", "EM", "EXE", "FA", "ISC", "ICN", "G", "PIE", "T20", "PYI", "PT", "Q", "RSE", "RET", "SLF", "SIM", "TID", "TCH", "INT", "ARG", "PTH", "TD", "FIX", "ERA", "PD", "PGH", "PL", "TRY", "FLY", "NPY", "AIR", "PERF"]
+ignore = ["D100", "D101", "D102", "D103", "D104", "D105", "D106", "D107", "S101"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --cov=src/sc_gen5 --cov-report=html --cov-report=term-missing"
+asyncio_mode = "auto" 
