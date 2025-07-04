@@ -31,7 +31,8 @@ import {
   Tab,
   Accordion,
   AccordionSummary,
-  AccordionDetails
+  AccordionDetails,
+  ListItemButton
 } from '@mui/material';
 import {
   Psychology as ConsultIcon,
@@ -303,7 +304,7 @@ const ConsultationPage: React.FC = () => {
     }
   };
 
-  const useSuggestion = (suggestion: string) => {
+  const handleSuggestionClick = (suggestion: string) => {
     setCurrentMessage(suggestion);
     inputRef.current?.focus();
   };
@@ -392,7 +393,7 @@ const ConsultationPage: React.FC = () => {
                         <Grid item key={index}>
                           <Chip
                             label={suggestion}
-                            onClick={() => useSuggestion(suggestion)}
+                            onClick={() => handleSuggestionClick(suggestion)}
                             clickable
                             variant="outlined"
                             icon={<SuggestionIcon />}
@@ -516,16 +517,13 @@ const ConsultationPage: React.FC = () => {
                 
                 <List dense>
                   {sessions.slice(0, 5).map((session) => (
-                    <ListItem
-                      key={session.id}
-                      button
-                      onClick={() => loadSession(session.id)}
-                      selected={currentSessionId === session.id}
-                    >
-                      <ListItemText
-                        primary={session.title}
-                        secondary={`${session.message_count} messages • ${new Date(session.created_at).toLocaleDateString()}`}
-                      />
+                    <ListItem disablePadding>
+                      <ListItemButton onClick={() => loadSession(session.id)} selected={currentSessionId === session.id}>
+                        <ListItemText
+                          primary={session.title}
+                          secondary={`${session.message_count} messages • ${new Date(session.created_at).toLocaleDateString()}`}
+                        />
+                      </ListItemButton>
                     </ListItem>
                   ))}
                 </List>

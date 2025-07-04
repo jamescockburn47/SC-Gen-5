@@ -170,8 +170,8 @@ class EnhancedDesktopLauncher:
         self.processes: Dict[str, subprocess.Popen] = {}
         self.services = self._get_service_configs()
         self.monitor = SystemMonitor()
-        self.tray_icon: Optional[pystray.Icon] = None
-        self.gui_window: Optional[tk.Tk] = None
+        self.tray_icon = None
+        self.gui_window = None
         self.running = True
         self.health_check_thread: Optional[threading.Thread] = None
         
@@ -239,7 +239,7 @@ class EnhancedDesktopLauncher:
         except Exception:
             pass
     
-    def create_tray_icon(self) -> Optional[pystray.Icon]:
+    def create_tray_icon(self):
         """Create system tray icon"""
         if not SYSTEM_TRAY_AVAILABLE:
             return None
@@ -654,6 +654,28 @@ System Resources:
             command=lambda: webbrowser.open("http://localhost:8000/docs")
         ).pack(side=tk.LEFT, padx=5)
         
+        # Desktop integration
+        desktop_frame = ttk.LabelFrame(self.gui_window, text="Desktop Integration", padding=10)
+        desktop_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Button(
+            desktop_frame,
+            text="Create Desktop Shortcut",
+            command=self.create_desktop_shortcut
+        ).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(
+            desktop_frame,
+            text="Setup Auto-Start",
+            command=lambda: self.setup_auto_start(True)
+        ).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(
+            desktop_frame,
+            text="Remove Auto-Start",
+            command=lambda: self.setup_auto_start(False)
+        ).pack(side=tk.LEFT, padx=5)
+        
         # System info
         info_frame = ttk.LabelFrame(self.gui_window, text="System Information", padding=10)
         info_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
@@ -669,9 +691,9 @@ System Resources:
             info_text.insert(tk.END, f"Memory: {stats.get('memory', {}).get('percent', 0):.1f}%\n")
             info_text.insert(tk.END, f"Disk: {stats.get('disk', {}).get('percent', 0):.1f}%\n")
             
-            if stats.get('gpu', {}).get('available', True):
-                gpu = stats['gpu']
-                info_text.insert(tk.END, f"GPU: {gpu.get('load', 0):.1f}% ({gpu.get('memory_percent', 0):.1f}% VRAM)\n")
+            gpu_stats = stats.get('gpu', {})
+            if gpu_stats.get('available', False):
+                info_text.insert(tk.END, f"GPU: {gpu_stats.get('load', 0):.1f}% ({gpu_stats.get('memory_percent', 0):.1f}% VRAM)\n")
             
             self.gui_window.after(5000, update_info)  # Update every 5 seconds
         
