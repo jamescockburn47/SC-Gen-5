@@ -63,10 +63,10 @@ const Sidebar: React.FC<SidebarProps> = ({ drawerWidth, open }) => {
       <Box sx={{ p: 3, textAlign: 'center' }}>
         <GavelIcon sx={{ fontSize: 48, mb: 1, color: 'secondary.main' }} />
         <Typography variant="h5" sx={{ color: 'white', fontWeight: 600 }}>
-          Strategic Counsel
+          LexCognito
         </Typography>
         <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.7)', mb: 2 }}>
-          Gen 5 Legal Research Assistant
+          AI-Powered Legal Research Platform
         </Typography>
         <Chip 
           label="v5.0.0" 

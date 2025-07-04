@@ -10,9 +10,9 @@ import DocumentsPage from './pages/DocumentsPage';
 import CompaniesHousePage from './pages/CompaniesHousePage';
 import TerminalPage from './pages/TerminalPage';
 import AnalyticsPage from './pages/AnalyticsPage';
-import ClaudeCliPage from './pages/ClaudeCliPage';
+import ClaudeCliNativePage from './pages/ClaudeCliNativePage';
 
-// Strategic Counsel theme
+// LexCognito theme
 const theme = createTheme({
   palette: {
     mode: 'light',
@@ -98,7 +98,7 @@ function App() {
               <Route path="/documents" element={<DocumentsPage />} />
               <Route path="/companies-house" element={<CompaniesHousePage />} />
               <Route path="/terminal" element={<TerminalPage />} />
-              <Route path="/claude-cli" element={<ClaudeCliPage />} />
+              <Route path="/claude-cli" element={<ClaudeCliNativePage />} />
               <Route path="/analytics" element={<AnalyticsPage />} />
             </Routes>
           </Box>

@@ -134,6 +134,10 @@ class DocStore:
             # Add to vector store
             chunk_ids = self.vector_store.add_embeddings(chunks, chunk_metadatas)
             
+            # CRITICAL: Save vector store to persist embeddings
+            self.vector_store.save_index()
+            logger.info(f"Vector store saved with {len(chunk_ids)} new embeddings")
+            
             # Store document metadata
             doc_metadata = {
                 "doc_id": doc_id,
@@ -225,6 +229,10 @@ class DocStore:
         # Remove chunks from vector store
         for chunk_id in doc.get("chunk_ids", []):
             self.vector_store.remove_by_id(chunk_id)
+        
+        # CRITICAL: Save vector store after deletion
+        self.vector_store.save_index()
+        logger.info(f"Vector store saved after removing {len(doc.get('chunk_ids', []))} chunks")
         
         # Remove document metadata
         del self.documents[doc_id]

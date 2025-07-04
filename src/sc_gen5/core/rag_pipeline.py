@@ -7,6 +7,7 @@ from .cloud_llm import CloudLLMGenerator, CloudProvider
 from .doc_store import DocStore
 from .local_llm import LocalLLMGenerator
 from .protocols import StrategicProtocols
+from .legal_prompts import LegalPromptBuilder, LegalModelSelector
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +20,8 @@ class RAGPipeline:
         doc_store: DocStore,
         local_llm: Optional[LocalLLMGenerator] = None,
         cloud_llm: Optional[CloudLLMGenerator] = None,
-        retrieval_k: int = 18,
-        rerank_top_k: int = 6,
+        retrieval_k: int = 50,
+        rerank_top_k: int = 25,
         use_reranker: bool = False,
     ) -> None:
         """Initialize RAG pipeline.
@@ -62,6 +63,7 @@ class RAGPipeline:
         matter_type: Optional[str] = None,
         matter_id: Optional[str] = None,
         filter_metadata: Optional[Dict[str, Any]] = None,
+        chunk_limit: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Generate answer using RAG pipeline.
         
@@ -80,37 +82,40 @@ class RAGPipeline:
         logger.info(f"Processing question: {question[:100]}...")
         
         try:
-            # Step 1: Retrieve relevant documents
+            # Step 1: Auto-adjust chunk limits based on query type
+            retrieval_k, final_k = self._get_smart_chunk_limits(question, chunk_limit)
+            
+            # Step 2: Retrieve relevant documents
             retrieved_docs = self.doc_store.search(
                 query=question,
-                k=self.retrieval_k,
+                k=retrieval_k,
                 filter_metadata=filter_metadata
             )
             
             if not retrieved_docs:
                 return {
                     "answer": "I couldn't find any relevant documents to answer your question. Please ensure you have uploaded relevant documents to the system.",
-                    "sources": "",
+                    "sources": [],
                     "matter_id": matter_id,
                     "model_used": "none",
                     "retrieved_chunks": 0,
                 }
             
-            logger.info(f"Retrieved {len(retrieved_docs)} documents")
+            logger.info(f"Retrieved {len(retrieved_docs)} document chunks")
             
-            # Step 2: Rerank if enabled
+            # Step 3: Rerank if enabled
             final_docs = self._rerank_documents(question, retrieved_docs) if self.use_reranker else retrieved_docs
-            final_docs = final_docs[:self.rerank_top_k]
+            final_docs = final_docs[:final_k]
             
             # Step 3: Build context
             context = self._build_context(final_docs)
             
-            # Step 4: Generate prompt
-            prompt = StrategicProtocols.build_rag_prompt(
+            # Step 4: Generate legal analysis prompt using IRAC methodology
+            prompt = LegalPromptBuilder.build_legal_analysis_prompt(
                 question=question,
-                context=context,
+                context_documents=context,
                 matter_type=matter_type,
-                matter_id=matter_id
+                analysis_style="comprehensive"
             )
             
             # Step 5: Generate answer
@@ -120,6 +125,9 @@ class RAGPipeline:
                 )
             else:
                 answer, model_used = self._generate_local_answer(prompt, model_choice)
+            
+            # Step 5.5: Add grounding verification warning
+            answer = self._add_grounding_verification(answer)
             
             # Step 6: Build sources
             sources = self._build_sources(final_docs)
@@ -137,7 +145,7 @@ class RAGPipeline:
             logger.error(f"RAG pipeline failed: {e}")
             return {
                 "answer": f"I encountered an error while processing your question: {str(e)}",
-                "sources": "",
+                "sources": [],
                 "matter_id": matter_id,
                 "model_used": "error",
                 "retrieved_chunks": 0,
@@ -168,11 +176,12 @@ class RAGPipeline:
         logger.info(f"Processing direct question: {question[:100]}...")
         
         try:
-            # Generate standalone legal prompt (no document context)
-            prompt = StrategicProtocols.build_standalone_prompt(
+            # Generate standalone legal prompt (no document context) using IRAC methodology
+            prompt = LegalPromptBuilder.build_legal_analysis_prompt(
                 question=question,
+                context_documents="No specific documents provided. Base analysis on general legal principles.",
                 matter_type=matter_type,
-                matter_id=matter_id
+                analysis_style="comprehensive"
             )
             
             # Generate answer
@@ -185,7 +194,7 @@ class RAGPipeline:
             
             return {
                 "answer": answer,
-                "sources": "Direct legal analysis (no documents consulted)",
+                "sources": [],  # Empty array for direct queries
                 "matter_id": matter_id,
                 "model_used": model_used,
                 "retrieved_chunks": 0,
@@ -197,7 +206,7 @@ class RAGPipeline:
             logger.error(f"Direct answer pipeline failed: {e}")
             return {
                 "answer": f"I encountered an error while processing your question: {str(e)}",
-                "sources": "",
+                "sources": [],
                 "matter_id": matter_id,
                 "model_used": "error",
                 "retrieved_chunks": 0,
@@ -231,7 +240,7 @@ class RAGPipeline:
                 doc_copy["rerank_score"] = float(score)
                 reranked_docs.append(doc_copy)
                 
-            logger.info(f"Reranked {len(reranked_docs)} documents")
+            logger.info(f"Reranked {len(reranked_docs)} document chunks")
             return reranked_docs
             
         except Exception as e:
@@ -264,35 +273,113 @@ Document {i}: {filename} (Chunk {chunk_index + 1}){warning_text}
         
         return "\n\n".join(context_parts)
 
-    def _build_sources(self, documents: List[Dict[str, Any]]) -> str:
-        """Build sources string from retrieved documents."""
+    def _build_sources(self, documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Build sources array from retrieved documents."""
         sources = []
+        seen_sources = set()
         
         for doc in documents:
             filename = doc.get("filename", "Unknown")
             chunk_index = doc.get("chunk_index", 0)
             doc_id = doc.get("doc_id", "unknown")
+            text = doc.get("text", "")
             
-            source = f"{filename} (Chunk {chunk_index + 1}, ID: {doc_id})"
-            if source not in sources:
-                sources.append(source)
+            # Create unique identifier to avoid duplicates
+            source_key = f"{doc_id}_{chunk_index}"
+            if source_key not in seen_sources:
+                source_obj = {
+                    "document_id": doc_id,
+                    "filename": filename,
+                    "relevance_score": doc.get("score", 0.5),  # Use search score if available
+                    "text_excerpt": text[:200] + "..." if len(text) > 200 else text,
+                    "page_number": None  # Could be extracted from metadata if available
+                }
+                sources.append(source_obj)
+                seen_sources.add(source_key)
         
-        return "; ".join(sources)
+        return sources
+
+    def _get_smart_chunk_limits(self, question: str, chunk_limit: Optional[int] = None) -> tuple[int, int]:
+        """Intelligently determine chunk limits based on query type."""
+        if chunk_limit:
+            return min(chunk_limit, 100), chunk_limit
+        
+        question_lower = question.lower()
+        
+        # Detect query type and set appropriate limits (balanced for performance)
+        if any(word in question_lower for word in ['summarize', 'summarise', 'summary', 'overview', 'comprehensive', 'complete', 'full']):
+            # Document summary needs high coverage
+            return 60, 40  # 34% coverage
+        elif any(word in question_lower for word in ['thorough', 'detailed', 'analyze', 'analyse', 'review', 'examine', 'all', 'every']):
+            # Detailed analysis needs good coverage
+            return 50, 30  # 25% coverage  
+        elif any(word in question_lower for word in ['find', 'search', 'locate', 'identify', 'position', 'stance', 'view']):
+            # Search tasks need broad initial retrieval
+            return 55, 25  # 21% coverage
+        else:
+            # Standard questions use default
+            return self.retrieval_k, self.rerank_top_k
+
+    def _add_grounding_verification(self, answer: str) -> str:
+        """Add verification warning and check for obvious hallucinations."""
+        
+        # Check for common hallucination patterns
+        hallucination_indicators = [
+            " v. ",  # Case citations like "Smith v. Jones"
+            " LLC)",  # Made-up company references
+            "section ",  # Specific statutory references
+            "paragraph ",  # Specific document references
+            "subsection ",  # Legal subsections
+            "$",  # Dollar amounts
+            "per annum",  # Financial terms
+            "Judge ",  # Specific judge names
+        ]
+        
+        warning_level = "⚠️"
+        for indicator in hallucination_indicators:
+            if indicator in answer:
+                warning_level = "🚨 HIGH RISK"
+                break
+                
+        verification_warning = f"\n\n{warning_level} VERIFICATION REQUIRED: This analysis is based on the provided documents. Users should verify all factual claims, legal citations, and specific details against the original source materials before relying on this analysis for legal decisions."
+        
+        if warning_level == "🚨 HIGH RISK":
+            verification_warning += "\n\n🚨 WARNING: This response contains specific legal details that may require additional verification. Cross-check all citations, amounts, and legal references."
+            
+        return answer + verification_warning
 
     def _generate_local_answer(self, prompt: str, model_choice: Optional[str]) -> tuple[str, str]:
-        """Generate answer using local LLM."""
+        """Generate answer using local LLM with proper model selection."""
         try:
-            model = model_choice or self.local_llm.default_model
+            # Get available models
+            available_models = self.local_llm.list_models()
+            
+            # Use legal model selector if no specific model chosen
+            if not model_choice:
+                model = LegalModelSelector.select_model_for_query(
+                    query=prompt[:200],  # Use first part of prompt for analysis
+                    available_models=available_models
+                )
+            else:
+                model = model_choice
+                
+            # Ensure we don't use lawma-8b for text generation
+            if "lawma-8b" in model and "classify" not in prompt.lower():
+                logger.warning(f"Avoiding lawma-8b for text generation, switching to mixtral")
+                model = "mixtral:latest" if "mixtral:latest" in available_models else available_models[0]
             
             # Ensure model is available
             if not self.local_llm.ensure_model_available(model):
-                raise RuntimeError(f"Model {model} not available")
+                # Fallback to first available model
+                model = available_models[0] if available_models else "mixtral:latest"
+                if not self.local_llm.ensure_model_available(model):
+                    raise RuntimeError(f"No models available")
             
             answer = self.local_llm.generate(
                 prompt=prompt,
                 model=model,
                 max_tokens=2000,
-                temperature=0.1,  # Lower temperature for factual responses
+                temperature=0.0,  # Zero temperature to reduce hallucination
             )
             
             return answer, model

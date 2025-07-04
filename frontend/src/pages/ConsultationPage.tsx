@@ -78,7 +78,9 @@ interface ConsultationSession {
 }
 
 interface ConsultationSettings {
-  model_preference: 'local' | 'cloud' | 'auto';
+  use_cloud: boolean;
+  local_model: 'mistral:latest' | 'mixtral:latest';
+  cloud_provider: 'anthropic' | 'openai' | 'gemini';
   include_sources: boolean;
   max_context_documents: number;
   response_style: 'detailed' | 'concise' | 'technical';
@@ -113,7 +115,9 @@ const ConsultationPage: React.FC = () => {
   const [sessions, setSessions] = useState<ConsultationSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [settings, setSettings] = useState<ConsultationSettings>({
-    model_preference: 'auto',
+    use_cloud: false,
+    local_model: 'mistral:latest',
+    cloud_provider: 'anthropic',
     include_sources: true,
     max_context_documents: 5,
     response_style: 'detailed',
@@ -215,7 +219,12 @@ const ConsultationPage: React.FC = () => {
       const response = await axios.post('/api/consultations/query', {
         query: currentMessage,
         session_id: currentSessionId,
-        settings: settings,
+        settings: {
+          ...settings,
+          model_preference: settings.use_cloud ? 'cloud' : settings.local_model,
+          cloud_allowed: settings.use_cloud,
+          cloud_provider: settings.cloud_provider
+        },
         context_documents: settings.max_context_documents
       });
 
@@ -336,8 +345,13 @@ const ConsultationPage: React.FC = () => {
                     color="secondary"
                     variant="outlined"
                   />
+                  <Chip
+                    label={settings.use_cloud ? `Cloud (${settings.cloud_provider})` : `Local (${settings.local_model.split(':')[0]})`}
+                    color={settings.use_cloud ? "warning" : "success"}
+                    variant="filled"
+                  />
                   {currentSessionId && (
-                    <Chip label="Session Active" color="success" variant="outlined" />
+                    <Chip label="Session Active" color="info" variant="outlined" />
                   )}
                 </Box>
                 
@@ -536,11 +550,58 @@ const ConsultationPage: React.FC = () => {
               </CardContent>
             </Card>
 
+            {/* Model Selection */}
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <AiIcon />
+                  AI Model Selection
+                </Typography>
+                
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={settings.use_cloud}
+                      onChange={(e) => setSettings(prev => ({ ...prev, use_cloud: e.target.checked }))}
+                      color="warning"
+                    />
+                  }
+                  label={settings.use_cloud ? "Cloud AI (Faster, Requires Internet)" : "Local AI (Private, No Internet)"}
+                  sx={{ mb: 2 }}
+                />
+                
+                {!settings.use_cloud ? (
+                  <FormControl fullWidth sx={{ mb: 2 }}>
+                    <InputLabel>Local Model</InputLabel>
+                    <Select
+                      value={settings.local_model}
+                      onChange={(e) => setSettings(prev => ({ ...prev, local_model: e.target.value as any }))}
+                    >
+                      <MenuItem value="mistral:latest">Mistral (7B) - Best Quality Legal Analysis</MenuItem>
+                      <MenuItem value="mixtral:latest">Mixtral (46B) - Most Powerful (High Memory)</MenuItem>
+                    </Select>
+                  </FormControl>
+                ) : (
+                  <FormControl fullWidth sx={{ mb: 2 }}>
+                    <InputLabel>Cloud Provider</InputLabel>
+                    <Select
+                      value={settings.cloud_provider}
+                      onChange={(e) => setSettings(prev => ({ ...prev, cloud_provider: e.target.value as any }))}
+                    >
+                      <MenuItem value="anthropic">Claude (Anthropic)</MenuItem>
+                      <MenuItem value="openai">GPT (OpenAI)</MenuItem>
+                      <MenuItem value="gemini">Gemini (Google)</MenuItem>
+                    </Select>
+                  </FormControl>
+                )}
+              </CardContent>
+            </Card>
+
             {/* Quick Settings */}
             <Card>
               <CardContent>
                 <Typography variant="h6" gutterBottom>
-                  Quick Settings
+                  Legal Settings
                 </Typography>
                 
                 <FormControl fullWidth sx={{ mb: 2 }}>
@@ -596,8 +657,12 @@ const ConsultationPage: React.FC = () => {
                     <Chip label={availableDocuments} size="small" color="primary" />
                   </Box>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <Typography variant="body2">Model:</Typography>
-                    <Chip label={settings.model_preference} size="small" color="secondary" />
+                    <Typography variant="body2">AI Model:</Typography>
+                    <Chip 
+                      label={settings.use_cloud ? settings.cloud_provider : settings.local_model.split(':')[0]} 
+                      size="small" 
+                      color={settings.use_cloud ? "warning" : "success"}
+                    />
                   </Box>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                     <Typography variant="body2">Context Documents:</Typography>
@@ -615,17 +680,9 @@ const ConsultationPage: React.FC = () => {
         <DialogTitle>Consultation Settings</DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, mt: 2 }}>
-            <FormControl fullWidth>
-              <InputLabel>Model Preference</InputLabel>
-              <Select
-                value={settings.model_preference}
-                onChange={(e) => setSettings(prev => ({ ...prev, model_preference: e.target.value as any }))}
-              >
-                <MenuItem value="auto">Auto (Best Available)</MenuItem>
-                <MenuItem value="local">Local Model (Mixtral)</MenuItem>
-                <MenuItem value="cloud">Cloud Model (GPT/Gemini)</MenuItem>
-              </Select>
-            </FormControl>
+            <Alert severity="info">
+              <strong>Model Selection:</strong> Use the main sidebar to choose between Cloud AI (faster, requires internet) or Local AI (private, no internet required).
+            </Alert>
 
             <TextField
               fullWidth
@@ -644,10 +701,10 @@ const ConsultationPage: React.FC = () => {
                   onChange={(e) => setSettings(prev => ({ ...prev, include_sources: e.target.checked }))}
                 />
               }
-              label="Show Document Sources"
+              label="Show Document Sources in Responses"
             />
 
-            <Alert severity="info">
+            <Alert severity="success">
               Settings are saved automatically and apply to new conversations.
             </Alert>
           </Box>

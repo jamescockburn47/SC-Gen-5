@@ -128,7 +128,7 @@ const TerminalPage: React.FC = () => {
         }
       };
     }
-  }, []);
+  }, [isConnected]);
 
   const connectToServer = () => {
     // Connect to our WebSocket server that will proxy to Gemini CLI

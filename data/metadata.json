@@ -127,12 +127,11 @@
       117,
       118
     ],
-    "created_at": "2025-07-01T07:49:33.825140",
-    "file_type": "pdf",
-    "pages": 67,
-    "ocr_engine": "tesseract",
+    "created_at": "2025-07-04T18:38:40.958065",
     "extraction_method": "direct",
     "quality_score": 0.8883427223707981,
-    "uploaded_via": "streamlit"
+    "pages": 67,
+    "file_type": "pdf",
+    "ocr_engine": "tesseract"
   }
 }

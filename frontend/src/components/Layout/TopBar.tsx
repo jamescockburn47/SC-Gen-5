@@ -49,7 +49,7 @@ const TopBar: React.FC<TopBarProps> = ({ drawerWidth, sidebarOpen, toggleSidebar
         </IconButton>
 
         <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1, color: 'primary.main' }}>
-          Strategic Counsel Gen 5
+          LexCognito
         </Typography>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>

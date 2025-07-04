@@ -29,8 +29,8 @@ companies_house_client = None
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="SC Gen 5 API",
-    description="REST API for Strategic Counsel Gen 5",
+    title="LexCognito API",
+    description="REST API for LexCognito - AI-Powered Legal Research Platform",
     version="1.0.0"
 )
 
@@ -70,8 +70,8 @@ async def startup_event():
         logger.info("Document store initialized")
         
         # Initialize RAG pipeline
-        retrieval_k = int(os.getenv("SC_RETRIEVAL_K", "18"))
-        rerank_top_k = int(os.getenv("SC_RERANK_TOP_K", "6"))
+        retrieval_k = int(os.getenv("SC_RETRIEVAL_K", "50"))
+        rerank_top_k = int(os.getenv("SC_RERANK_TOP_K", "25"))
         use_reranker = os.getenv("SC_USE_RERANKER", "false").lower() == "true"
         
         rag_pipeline = RAGPipeline(
@@ -98,7 +98,7 @@ async def startup_event():
 @app.get("/")
 async def root():
     """Health check endpoint."""
-    return {"message": "SC Gen 5 API is running", "status": "healthy"}
+    return {"message": "LexCognito API is running", "status": "healthy"}
 
 # Document management endpoints
 @app.get("/api/documents")
@@ -112,6 +112,19 @@ async def list_documents():
         return {"documents": documents, "total": len(documents)}
     except Exception as e:
         logger.error(f"Failed to list documents: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/documents/stats")
+async def get_document_stats():
+    """Get document statistics."""
+    if not doc_store:
+        raise HTTPException(status_code=500, detail="Document store not initialized")
+    
+    try:
+        stats = doc_store.get_stats()
+        return {"total_documents": stats.get("total_documents", 0)}
+    except Exception as e:
+        logger.error(f"Failed to get document stats: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/documents/upload")
@@ -230,6 +243,60 @@ async def delete_document(doc_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 # Consultation endpoints
+@app.post("/api/consultations/cloud-query")
+async def cloud_only_query(request: dict):
+    """Process a consultation query using cloud LLMs only (no RAG)."""
+    try:
+        query = request.get("query")
+        if not query:
+            raise HTTPException(status_code=400, detail="Query is required")
+        
+        cloud_provider = request.get("cloud_provider", "anthropic")
+        model_choice = request.get("model_choice")
+        
+        # Import cloud LLM directly
+        from ..core.cloud_llm import CloudLLMGenerator, CloudProvider
+        cloud_llm = CloudLLMGenerator()
+        
+        # Map provider string to enum
+        provider_map = {
+            "openai": CloudProvider.OPENAI,
+            "gemini": CloudProvider.GEMINI,
+            "claude": CloudProvider.CLAUDE,
+            "anthropic": CloudProvider.CLAUDE  # Alias for Claude
+        }
+        
+        provider_enum = provider_map.get(cloud_provider)
+        if not provider_enum:
+            raise HTTPException(status_code=400, detail=f"Unsupported provider: {cloud_provider}")
+        
+        # Generate direct answer without RAG
+        try:
+            answer = cloud_llm.generate(
+                prompt=f"You are a legal assistant. Please provide a professional legal analysis for the following question:\n\n{query}",
+                provider=provider_enum,
+                model=model_choice,
+                max_tokens=2000,
+                temperature=0.1
+            )
+            model_used = f"{cloud_provider}:{model_choice or 'default'}"
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Cloud LLM failed: {str(e)}")
+        
+        return {
+            "response": answer,
+            "sources": [],  # Empty array for cloud-only queries
+            "model_used": model_used,
+            "confidence": 1.0,
+            "timestamp": "2024-01-01T00:00:00Z",
+            "query_type": "cloud_only"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to process cloud-only query: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/consultations/query")
 async def query_consultation(request: dict):
     """Process a legal consultation query."""
@@ -246,12 +313,24 @@ async def query_consultation(request: dict):
         settings = request.get("settings", {})
         context_documents = request.get("context_documents", 5)
         
+        # Map frontend model preferences to actual model names
+        model_preference = settings.get("model_preference", "mistral:latest")  # Default to quality model
+        if model_preference == "auto":
+            model_choice = "mistral:latest"  # Use quality default
+        elif model_preference == "local":
+            model_choice = "mistral:latest"  # Use quality local model
+        elif model_preference == "cloud":
+            model_choice = None  # Cloud models handled differently
+            settings["cloud_allowed"] = True
+        else:
+            model_choice = model_preference  # Use exact model name
+        
         # Process the query through RAG pipeline
         result = rag_pipeline.answer(
             question=query,
             cloud_allowed=settings.get("cloud_allowed", False),
-            cloud_provider=settings.get("cloud_provider"),
-            model_choice=settings.get("model_preference"),
+            cloud_provider=settings.get("cloud_provider", "anthropic"),
+            model_choice=model_choice,
             matter_type=settings.get("legal_area"),
             matter_id=session_id or "default",
         )
@@ -261,7 +340,9 @@ async def query_consultation(request: dict):
             "sources": result.get("sources", []),
             "model_used": result.get("model_used", "unknown"),
             "confidence": result.get("confidence", 0.0),
-            "timestamp": "2024-01-01T00:00:00Z"
+            "timestamp": "2024-01-01T00:00:00Z",
+            "retrieved_chunks": result.get("retrieved_chunks", 0),
+            "documents_used": 1 if result.get("retrieved_chunks", 0) > 0 else 0  # Always 1 doc currently
         }
     except Exception as e:
         logger.error(f"Failed to process consultation query: {e}")
@@ -300,24 +381,17 @@ async def save_consultation_session(request: dict):
     # TODO: Implement session saving
     return {"message": "Session saved successfully"}
 
-@app.get("/api/documents/stats")
-async def get_document_stats():
-    """Get document statistics."""
-    if not doc_store:
-        raise HTTPException(status_code=500, detail="Document store not initialized")
-    
-    try:
-        stats = doc_store.get_stats()
-        return {"total_documents": stats.get("total_documents", 0)}
-    except Exception as e:
-        logger.error(f"Failed to get document stats: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 # Companies House endpoints
 @app.get("/api/companies-house/status")
 async def get_companies_house_status():
     """Get Companies House API status."""
     return {"available": companies_house_client is not None}
+
+@app.get("/api/companies-house/bulk-jobs")
+async def get_bulk_jobs():
+    """Get bulk processing jobs status."""
+    # TODO: Implement bulk job tracking
+    return {"jobs": [], "total": 0}
 
 @app.get("/api/companies-house/search")
 async def search_companies(query: str, type: str = "company", limit: int = 10):
@@ -377,53 +451,217 @@ async def get_usage_analytics():
         "period": "last_30_days"
     }
 
-# Claude CLI endpoints
-@app.post("/api/claude-cli/status")
+# Claude CLI Native Integration
+import asyncio
+import json
+import signal
+import uuid
+from typing import Dict, Any
+from fastapi import WebSocket, WebSocketDisconnect
+
+# Store active Claude CLI sessions
+claude_sessions: Dict[str, Dict[str, Any]] = {}
+
+@app.get("/api/claude-cli/status")
 async def get_claude_cli_status():
-    """Check Claude CLI availability."""
+    """Check Claude CLI availability and configuration."""
     try:
         import subprocess
         result = subprocess.run(["claude", "--version"], capture_output=True, text=True, timeout=5)
-        return {
-            "available": result.returncode == 0,
-            "version": result.stdout.strip() if result.returncode == 0 else None
-        }
-    except Exception:
-        return {"available": False, "version": None}
+        if result.returncode == 0:
+            # Get additional Claude CLI info
+            config_result = subprocess.run(["claude", "config", "list"], capture_output=True, text=True, timeout=5)
+            return {
+                "available": True,
+                "version": result.stdout.strip(),
+                "config": config_result.stdout if config_result.returncode == 0 else "Config not available",
+                "working_directory": os.getcwd()
+            }
+        else:
+            return {"available": False, "error": result.stderr}
+    except Exception as e:
+        return {"available": False, "error": str(e)}
 
-@app.post("/api/claude-cli/execute")
-async def execute_claude_cli(request: dict):
-    """Execute Claude CLI command."""
+@app.websocket("/ws/claude-cli/{session_id}")
+async def claude_cli_websocket(websocket: WebSocket, session_id: str):
+    """Native Claude CLI WebSocket interface for real-time interaction."""
+    await websocket.accept()
+    
     try:
-        import subprocess
-        
-        query = request.get("query")
-        if not query:
-            raise HTTPException(status_code=400, detail="Query is required")
-        
-        cwd = request.get("cwd", os.getcwd())
-        
-        # Execute Claude CLI
-        cmd = ["claude", query]
-        result = subprocess.run(
-            cmd,
-            text=True,
-            capture_output=True,
-            timeout=120,
-            cwd=cwd
+        # Initialize Claude CLI session
+        claude_process = await asyncio.create_subprocess_exec(
+            "claude",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=os.getcwd()
         )
         
-        return {
-            "success": result.returncode == 0,
-            "output": result.stdout or result.stderr or "No output",
-            "returncode": result.returncode
+        claude_sessions[session_id] = {
+            "process": claude_process,
+            "websocket": websocket,
+            "active": True
         }
         
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=408, detail="Claude CLI command timed out")
+        # Start reading Claude CLI output
+        async def read_claude_output():
+            try:
+                while claude_sessions.get(session_id, {}).get("active", False):
+                    if claude_process.stdout:
+                        line = await claude_process.stdout.readline()
+                        if line:
+                            await websocket.send_text(json.dumps({
+                                "type": "output",
+                                "content": line.decode().rstrip()
+                            }))
+                        else:
+                            break
+            except Exception as e:
+                await websocket.send_text(json.dumps({
+                    "type": "error",
+                    "content": f"Output stream error: {str(e)}"
+                }))
+        
+        # Start reading Claude CLI errors
+        async def read_claude_errors():
+            try:
+                while claude_sessions.get(session_id, {}).get("active", False):
+                    if claude_process.stderr:
+                        line = await claude_process.stderr.readline()
+                        if line:
+                            await websocket.send_text(json.dumps({
+                                "type": "error",
+                                "content": line.decode().rstrip()
+                            }))
+            except Exception as e:
+                await websocket.send_text(json.dumps({
+                    "type": "error", 
+                    "content": f"Error stream error: {str(e)}"
+                }))
+        
+        # Start output readers
+        output_task = asyncio.create_task(read_claude_output())
+        error_task = asyncio.create_task(read_claude_errors())
+        
+        # Send initial connection message
+        await websocket.send_text(json.dumps({
+            "type": "connected",
+            "content": f"Connected to Claude CLI session {session_id}",
+            "working_directory": os.getcwd()
+        }))
+        
+        # Handle incoming messages from frontend
+        while True:
+            try:
+                data = await websocket.receive_text()
+                message = json.loads(data)
+                
+                if message.get("type") == "input":
+                    # Send input to Claude CLI
+                    if claude_process.stdin:
+                        input_text = message.get("content", "") + "\n"
+                        claude_process.stdin.write(input_text.encode())
+                        await claude_process.stdin.drain()
+                        
+                elif message.get("type") == "interrupt":
+                    # Send Ctrl+C to Claude CLI
+                    if claude_process:
+                        claude_process.send_signal(signal.SIGINT)
+                        
+                elif message.get("type") == "close":
+                    break
+                    
+            except WebSocketDisconnect:
+                break
+            except Exception as e:
+                await websocket.send_text(json.dumps({
+                    "type": "error",
+                    "content": f"Message handling error: {str(e)}"
+                }))
+        
     except Exception as e:
-        logger.error(f"Failed to execute Claude CLI: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        await websocket.send_text(json.dumps({
+            "type": "error",
+            "content": f"Session initialization error: {str(e)}"
+        }))
+    
+    finally:
+        # Clean up session
+        if session_id in claude_sessions:
+            session = claude_sessions[session_id]
+            session["active"] = False
+            if "process" in session:
+                try:
+                    session["process"].terminate()
+                    await session["process"].wait()
+                except:
+                    pass
+            del claude_sessions[session_id]
+
+@app.post("/api/claude-cli/sessions")
+async def create_claude_session():
+    """Create a new Claude CLI session."""
+    session_id = str(uuid.uuid4())
+    return {
+        "session_id": session_id,
+        "websocket_url": f"/ws/claude-cli/{session_id}",
+        "status": "created"
+    }
+
+@app.get("/api/claude-cli/sessions")
+async def list_claude_sessions():
+    """List active Claude CLI sessions."""
+    return {
+        "sessions": [
+            {
+                "session_id": sid,
+                "active": session.get("active", False),
+                "created_at": session.get("created_at", "unknown")
+            }
+            for sid, session in claude_sessions.items()
+        ]
+    }
+
+@app.delete("/api/claude-cli/sessions/{session_id}")
+async def terminate_claude_session(session_id: str):
+    """Terminate a Claude CLI session."""
+    if session_id in claude_sessions:
+        session = claude_sessions[session_id]
+        session["active"] = False
+        if "process" in session:
+            try:
+                session["process"].terminate()
+            except:
+                pass
+        del claude_sessions[session_id]
+        return {"message": "Session terminated"}
+    else:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+# Dashboard endpoints
+@app.get("/api/dashboard/stats")
+async def get_dashboard_stats():
+    """Get dashboard statistics."""
+    try:
+        # Get real document count
+        doc_count = 0
+        if doc_store:
+            try:
+                stats = doc_store.get_stats()
+                doc_count = stats.get("total_documents", 0)
+            except Exception:
+                pass
+        
+        # TODO: Implement real company and query tracking
+        return {
+            "documents": doc_count,
+            "companies": 0,  # TODO: Get from Companies House search history
+            "queries": 0,    # TODO: Get from consultation session storage
+            "avgResponseTime": "0s"  # TODO: Calculate from query logs
+        }
+    except Exception as e:
+        logger.error(f"Failed to get dashboard stats: {e}")
+        return {"documents": 0, "companies": 0, "queries": 0, "avgResponseTime": "0s"}
 
 # Error handlers
 @app.exception_handler(Exception)

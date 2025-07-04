@@ -26,34 +26,69 @@ import {
   Analytics as AnalyticsIcon
 } from '@mui/icons-material';
 
+interface SystemStats {
+  gpu: { usage: number; memory: string };
+  ram: { usage: number; memory: string };
+  cpu: { usage: number; cores: number };
+  storage: { usage: number; space: string };
+}
+
+interface Service {
+  name: string;
+  status: 'running' | 'stopped';
+  port: number | null;
+}
+
+interface Activity {
+  action: string;
+  file?: string;
+  query?: string;
+  company?: string;
+  task?: string;
+  time: string;
+}
+
 const Dashboard: React.FC = () => {
-  const systemStats = {
-    gpu: { usage: 34, memory: '3.2GB / 8GB' },
-    ram: { usage: 67, memory: '43GB / 64GB' },
-    cpu: { usage: 23, cores: 16 },
-    storage: { usage: 45, space: '890GB / 2TB' }
+  const [systemStats, setSystemStats] = React.useState<SystemStats | null>(null);
+  const [services, setServices] = React.useState<Service[]>([]);
+  const [recentActivity, setRecentActivity] = React.useState<Activity[]>([]);
+  const [dashboardStats, setDashboardStats] = React.useState({
+    documents: 0,
+    companies: 0,
+    queries: 0,
+    avgResponseTime: '0s'
+  });
+
+  React.useEffect(() => {
+    fetchDashboardData();
+    // Set placeholder data until real system monitoring is implemented
+    setSystemStats({
+      gpu: { usage: 0, memory: 'N/A' },
+      ram: { usage: 0, memory: 'N/A' },
+      cpu: { usage: 0, cores: 0 },
+      storage: { usage: 0, space: 'N/A' }
+    });
+    setServices([]);
+    setRecentActivity([]);
+  }, []);
+
+  const fetchDashboardData = async () => {
+    try {
+      const response = await fetch('/api/dashboard/stats');
+      if (response.ok) {
+        const data = await response.json();
+        setDashboardStats(data);
+      }
+    } catch (error) {
+      console.log('Using development mode - API not available');
+    }
   };
-
-  const services = [
-    { name: 'Mixtral Local LLM', status: 'running', port: 11434 },
-    { name: 'Consult API', status: 'running', port: 8000 },
-    { name: 'Companies House API', status: 'running', port: 8001 },
-    { name: 'Vector Database', status: 'running', port: null },
-    { name: 'Gemini CLI', status: 'ready', port: null }
-  ];
-
-  const recentActivity = [
-    { action: 'Document processed', file: 'A1.5.pdf', time: '2 min ago' },
-    { action: 'Legal query answered', query: 'Contract analysis...', time: '5 min ago' },
-    { action: 'Company lookup', company: 'Microsoft Corporation', time: '12 min ago' },
-    { action: 'Gemini analysis', task: 'Code review', time: '18 min ago' }
-  ];
 
   return (
     <Box>
       <Typography variant="h4" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
         <DashboardIcon sx={{ fontSize: 40 }} />
-        Strategic Counsel Gen 5 Dashboard
+        LexCognito Dashboard
       </Typography>
 
       <Grid container spacing={3}>
@@ -71,13 +106,13 @@ const Dashboard: React.FC = () => {
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <LinearProgress 
                         variant="determinate" 
-                        value={systemStats.gpu.usage} 
+                        value={systemStats?.gpu.usage || 0} 
                         sx={{ flexGrow: 1 }}
                         color="success"
                       />
-                      <Typography variant="body2">{systemStats.gpu.usage}%</Typography>
+                      <Typography variant="body2">{systemStats?.gpu.usage || 0}%</Typography>
                     </Box>
-                    <Typography variant="caption">{systemStats.gpu.memory}</Typography>
+                    <Typography variant="caption">{systemStats?.gpu.memory || 'N/A'}</Typography>
                   </Box>
                 </Grid>
                 <Grid item xs={6} md={3}>
@@ -86,13 +121,13 @@ const Dashboard: React.FC = () => {
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <LinearProgress 
                         variant="determinate" 
-                        value={systemStats.ram.usage} 
+                        value={systemStats?.ram.usage || 0} 
                         sx={{ flexGrow: 1 }}
                         color="primary"
                       />
-                      <Typography variant="body2">{systemStats.ram.usage}%</Typography>
+                      <Typography variant="body2">{systemStats?.ram.usage || 0}%</Typography>
                     </Box>
-                    <Typography variant="caption">{systemStats.ram.memory}</Typography>
+                    <Typography variant="caption">{systemStats?.ram.memory || 'N/A'}</Typography>
                   </Box>
                 </Grid>
                 <Grid item xs={6} md={3}>
@@ -101,13 +136,13 @@ const Dashboard: React.FC = () => {
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <LinearProgress 
                         variant="determinate" 
-                        value={systemStats.cpu.usage} 
+                        value={systemStats?.cpu.usage || 0} 
                         sx={{ flexGrow: 1 }}
                         color="secondary"
                       />
-                      <Typography variant="body2">{systemStats.cpu.usage}%</Typography>
+                      <Typography variant="body2">{systemStats?.cpu.usage || 0}%</Typography>
                     </Box>
-                    <Typography variant="caption">{systemStats.cpu.cores} cores</Typography>
+                    <Typography variant="caption">{systemStats?.cpu.cores || 0} cores</Typography>
                   </Box>
                 </Grid>
                 <Grid item xs={6} md={3}>
@@ -116,13 +151,13 @@ const Dashboard: React.FC = () => {
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <LinearProgress 
                         variant="determinate" 
-                        value={systemStats.storage.usage} 
+                        value={systemStats?.storage.usage || 0} 
                         sx={{ flexGrow: 1 }}
                         color="info"
                       />
-                      <Typography variant="body2">{systemStats.storage.usage}%</Typography>
+                      <Typography variant="body2">{systemStats?.storage.usage || 0}%</Typography>
                     </Box>
-                    <Typography variant="caption">{systemStats.storage.space}</Typography>
+                    <Typography variant="caption">{systemStats?.storage.space || 'N/A'}</Typography>
                   </Box>
                 </Grid>
               </Grid>
@@ -137,7 +172,7 @@ const Dashboard: React.FC = () => {
               <Card>
                 <CardContent sx={{ textAlign: 'center' }}>
                   <DocumentIcon sx={{ fontSize: 40, color: 'primary.main', mb: 1 }} />
-                  <Typography variant="h4">1,247</Typography>
+                  <Typography variant="h4">{dashboardStats.documents}</Typography>
                   <Typography variant="body2" color="textSecondary">Documents</Typography>
                 </CardContent>
               </Card>
@@ -146,7 +181,7 @@ const Dashboard: React.FC = () => {
               <Card>
                 <CardContent sx={{ textAlign: 'center' }}>
                   <BusinessIcon sx={{ fontSize: 40, color: 'secondary.main', mb: 1 }} />
-                  <Typography variant="h4">89</Typography>
+                  <Typography variant="h4">{dashboardStats.companies}</Typography>
                   <Typography variant="body2" color="textSecondary">Companies</Typography>
                 </CardContent>
               </Card>
@@ -155,7 +190,7 @@ const Dashboard: React.FC = () => {
               <Card>
                 <CardContent sx={{ textAlign: 'center' }}>
                   <AnalyticsIcon sx={{ fontSize: 40, color: 'success.main', mb: 1 }} />
-                  <Typography variant="h4">456</Typography>
+                  <Typography variant="h4">{dashboardStats.queries}</Typography>
                   <Typography variant="body2" color="textSecondary">Queries</Typography>
                 </CardContent>
               </Card>
@@ -164,7 +199,7 @@ const Dashboard: React.FC = () => {
               <Card>
                 <CardContent sx={{ textAlign: 'center' }}>
                   <SpeedIcon sx={{ fontSize: 40, color: 'info.main', mb: 1 }} />
-                  <Typography variant="h4">2.3s</Typography>
+                  <Typography variant="h4">{dashboardStats.avgResponseTime}</Typography>
                   <Typography variant="body2" color="textSecondary">Avg Response</Typography>
                 </CardContent>
               </Card>
@@ -178,7 +213,7 @@ const Dashboard: React.FC = () => {
             <CardContent>
               <Typography variant="h6" gutterBottom>Service Status</Typography>
               <List dense>
-                {services.map((service, index) => (
+                {services.length > 0 ? services.map((service, index) => (
                   <ListItem key={index}>
                     <ListItemIcon>
                       {service.status === 'running' ? 
@@ -196,7 +231,11 @@ const Dashboard: React.FC = () => {
                       size="small"
                     />
                   </ListItem>
-                ))}
+                )) : (
+                  <ListItem>
+                    <ListItemText primary="No services configured" secondary="System monitoring not yet implemented" />
+                  </ListItem>
+                )}
               </List>
             </CardContent>
           </Card>
@@ -208,14 +247,18 @@ const Dashboard: React.FC = () => {
             <CardContent>
               <Typography variant="h6" gutterBottom>Recent Activity</Typography>
               <List dense>
-                {recentActivity.map((activity, index) => (
+                {recentActivity.length > 0 ? recentActivity.map((activity, index) => (
                   <ListItem key={index}>
                     <ListItemText
                       primary={activity.action}
                       secondary={`${activity.file || activity.query || activity.company || activity.task} • ${activity.time}`}
                     />
                   </ListItem>
-                ))}
+                )) : (
+                  <ListItem>
+                    <ListItemText primary="No recent activity" secondary="Activity tracking not yet implemented" />
+                  </ListItem>
+                )}
               </List>
             </CardContent>
           </Card>
@@ -251,7 +294,7 @@ const Dashboard: React.FC = () => {
         <Grid item xs={12}>
           <Alert severity="info">
             <Typography variant="subtitle2" gutterBottom>
-              🏛️ Strategic Counsel Gen 5 Legal Research Assistant
+              ⚖️ LexCognito - AI-Powered Legal Research Platform
             </Typography>
             <Typography variant="body2">
               Powered by Legion 5 Pro • 8GB VRAM • 64GB RAM • CUDA Enabled • Local-First AI • 

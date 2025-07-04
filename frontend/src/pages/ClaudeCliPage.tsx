@@ -28,7 +28,7 @@ import {
   BugReport as BugIcon,
   Description as DocsIcon,
   Architecture as ArchIcon,
-  TestTube as TestIcon,
+  Science as TestIcon,
   Refresh as RefreshIcon,
   ExpandMore as ExpandMoreIcon,
   FileCopy as CopyIcon

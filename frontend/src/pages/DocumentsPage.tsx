@@ -24,7 +24,6 @@ import {
   Tooltip,
   TextField,
   InputAdornment,
-  Menu,
   MenuItem,
   Tabs,
   Tab,
@@ -37,9 +36,7 @@ import {
   Visibility as ViewIcon,
   Download as DownloadIcon,
   Search as SearchIcon,
-  FilterList as FilterIcon,
   Refresh as RefreshIcon,
-  GetApp as ExtractIcon,
   TextSnippet as OcrIcon,
   Refresh as ReprocessIcon,
   CheckCircle as QualityIcon,
@@ -95,7 +92,6 @@ const DocumentsPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [tabValue, setTabValue] = useState(0);
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [documentText, setDocumentText] = useState<string>('');
   const [reprocessingDoc, setReprocessingDoc] = useState<string | null>(null);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' }>({
@@ -253,7 +249,7 @@ const DocumentsPage: React.FC = () => {
   const handleReprocessDocument = async (docId: string) => {
     setReprocessingDoc(docId);
     try {
-      const response = await axios.post(`/api/documents/${docId}/reprocess`);
+      await axios.post(`/api/documents/${docId}/reprocess`);
       await loadDocuments(); // Refresh document list
       setSnackbar({
         open: true,
