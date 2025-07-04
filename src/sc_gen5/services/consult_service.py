@@ -1,22 +1,25 @@
-"""FastAPI service for legal consultation using RAG pipeline."""
+"""Consultation service for legal research and document analysis."""
 
-import logging
 import os
-from contextlib import asynccontextmanager
-from typing import Any, Dict, Optional
+import logging
 import io
+from contextlib import asynccontextmanager
+from typing import Dict, Any, List, Optional
+from pathlib import Path
+import json
+from datetime import datetime
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, PlainTextResponse
+from fastapi.responses import StreamingResponse, PlainTextResponse, JSONResponse
 from pydantic import BaseModel, Field
+import uvicorn
 
-from sc_gen5.core.doc_store import DocStore
-from sc_gen5.core.rag_pipeline import RAGPipeline
+from ..core.doc_store import DocStore
+from ..core.rag_pipeline import RAGPipeline
 
 # Load environment variables from .env file
-from pathlib import Path
 env_path = Path(__file__).parent.parent.parent.parent / ".env"
 load_dotenv(env_path)
 
@@ -345,8 +348,6 @@ async def reprocess_document(doc_id: str):
 
 def main():
     """Main entry point for running the service."""
-    import uvicorn
-    
     host = os.getenv("SC_API_HOST", "0.0.0.0")
     port = int(os.getenv("SC_API_PORT", "8000"))
     log_level = os.getenv("SC_LOG_LEVEL", "info").lower()

@@ -1,4 +1,4 @@
-"""Streamlit UI for Strategic Counsel Gen 5."""
+"""Streamlit UI for SC Gen 5."""
 
 import json
 import logging
@@ -18,10 +18,10 @@ from pathlib import Path
 env_path = Path(__file__).parent.parent.parent.parent / ".env"
 load_dotenv(env_path)
 
-from sc_gen5.core.doc_store import DocStore
-from sc_gen5.core.rag_pipeline import RAGPipeline
-from sc_gen5.integrations.companies_house import CompaniesHouseClient
-from sc_gen5.integrations.gemini_cli import OfficialGeminiCLI
+from ..core.doc_store import DocStore
+from ..core.rag_pipeline import RAGPipeline
+from ..integrations.companies_house import CompaniesHouseClient
+# Note: Claude Code CLI integration (no separate import needed)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -120,18 +120,13 @@ def initialize_components():
         except ValueError:
             logger.warning("Companies House client not available - CH_API_KEY not set")
         
-        # Initialize Gemini CLI (optional)
-        gemini_cli = None
-        try:
-            gemini_cli = OfficialGeminiCLI()
-        except Exception as e:
-            logger.warning(f"Gemini CLI not available: {e}")
+        # Claude Code CLI is available via system command (no initialization needed)
         
-        return doc_store, rag_pipeline, ch_client, gemini_cli
+        return doc_store, rag_pipeline, ch_client
         
     except Exception as e:
         st.error(f"Failed to initialize components: {e}")
-        return None, None, None, None
+        return None, None, None
 
 
 def main():
@@ -141,7 +136,7 @@ def main():
     st.markdown("**Local-first legal research assistant with RAG and Companies House integration**")
     
     # Initialize components
-    doc_store, rag_pipeline, ch_client, gemini_cli = initialize_components()
+    doc_store, rag_pipeline, ch_client = initialize_components()
     
     if not doc_store or not rag_pipeline:
         st.error("Failed to initialize core components. Please check your configuration.")
@@ -175,17 +170,18 @@ def main():
         else:
             st.warning("🟡 Companies House: Not configured")
         
-        if gemini_cli:
-            gemini_info = gemini_cli.get_system_info()
-            if gemini_info.get("cli_available", False):
-                st.success("🟢 Official Gemini CLI: Available")
+        # Check Claude Code CLI
+        try:
+            claude_check = subprocess.run(["claude", "--version"], capture_output=True, text=True, timeout=5)
+            if claude_check.returncode == 0:
+                st.success(f"🟢 Claude Code CLI: {claude_check.stdout.strip()}")
             else:
-                st.warning("🟡 Official Gemini CLI: Node.js/npm required")
-        else:
-            st.warning("🟡 Official Gemini CLI: Not configured")
+                st.warning("🟡 Claude Code CLI: Not available")
+        except:
+            st.warning("🟡 Claude Code CLI: Not available")
     
     # Main tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["💬 Consultation", "📄 Document Management", "🏢 Companies House", "🤖 Gemini CLI", "📊 Analytics"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["💬 Consultation", "📄 Document Management", "🏢 Companies House", "🤖 Claude Code CLI", "📊 Analytics"])
     
     with tab1:
         consultation_tab(rag_pipeline)
@@ -197,7 +193,7 @@ def main():
         companies_house_tab(ch_client, doc_store)
     
     with tab4:
-        gemini_cli_tab(gemini_cli)
+        claude_cli_tab()
     
     with tab5:
         analytics_tab(doc_store, rag_pipeline)
@@ -641,84 +637,83 @@ def ingest_company_filings(
     return success_count, errors
 
 
-def gemini_cli_tab(gemini_cli: Optional[OfficialGeminiCLI]):
-    """Direct Gemini CLI terminal interface."""
-    st.header("🤖 Google Gemini CLI - Direct Interface")
+def claude_cli_tab():
+    """Direct Claude Code CLI terminal interface."""
+    st.header("🤖 Claude Code CLI - Direct Interface")
     
-    # Check Node.js availability
+    # Check Claude CLI availability
     try:
-        node_check = subprocess.run(["node", "--version"], capture_output=True, text=True, timeout=5)
-        node_available = node_check.returncode == 0
-        node_version = node_check.stdout.strip() if node_available else None
+        claude_check = subprocess.run(["claude", "--version"], capture_output=True, text=True, timeout=5)
+        claude_available = claude_check.returncode == 0
+        claude_version = claude_check.stdout.strip() if claude_available else None
     except:
-        node_available = False
-        node_version = None
+        claude_available = False
+        claude_version = None
     
     # Status display
-    if node_available:
-        st.success(f"✅ Node.js {node_version} - Gemini CLI Ready")
+    if claude_available:
+        st.success(f"✅ {claude_version} - Claude Code CLI Ready")
     else:
-        st.error("❌ Node.js not found - Install Node.js to use Gemini CLI")
-        st.code("curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -\nsudo apt-get install -y nodejs")
+        st.error("❌ Claude Code CLI not found - Please install Claude Code CLI")
+        st.code("curl -fsSL https://claude.ai/install.sh | sh")
         return
 
     # Direct CLI Interface
-    st.subheader("💻 Direct Gemini CLI Terminal")
+    st.subheader("💻 Direct Claude Code CLI Terminal")
     
     # Main command interface
-    with st.form("direct_gemini_form"):
-        st.markdown("**💬 Chat with Gemini CLI directly:**")
+    with st.form("direct_claude_form"):
+        st.markdown("**💬 Chat with Claude Code CLI directly:**")
         
         user_input = st.text_area(
             "Your message:",
             height=120,
             placeholder="Type your question or command here...\nExample: 'Analyze this codebase and suggest improvements'",
-            help="Direct input to Google's native Gemini CLI"
+            help="Direct input to Anthropic's Claude Code CLI"
         )
         
         col1, col2, col3 = st.columns([1, 1, 2])
         with col1:
-            run_direct = st.form_submit_button("🚀 Send to Gemini", type="primary")
+            run_direct = st.form_submit_button("🚀 Send to Claude", type="primary")
         with col2:
             show_help = st.form_submit_button("❓ Show Help")
         with col3:
-            st.markdown("*Direct connection to native CLI*")
+            st.markdown("*Direct connection to Claude Code CLI*")
     
     # Execute direct command
     if run_direct and user_input:
-        with st.spinner("🤖 Connecting to Gemini CLI..."):
+        with st.spinner("🤖 Connecting to Claude Code CLI..."):
             try:
-                # Run the official Gemini CLI directly
-                cmd = ["npx", "--yes", "https://github.com/google-gemini/gemini-cli"]
+                # Run Claude Code CLI directly
+                cmd = ["claude", user_input]
                 
                 process = subprocess.run(
                     cmd,
-                    input=user_input,
                     text=True,
                     capture_output=True,
-                    timeout=60,
+                    timeout=120,
                     cwd=os.getcwd()
                 )
                 
-                st.subheader("📟 Gemini CLI Output")
+                st.subheader("📟 Claude Code CLI Output")
                 
                 if process.returncode == 0:
                     if process.stdout:
-                        st.code(process.stdout, language="text")
+                        st.markdown(process.stdout)
                     else:
                         st.info("Command executed successfully (no output)")
                 else:
-                    st.error("❌ Gemini CLI Error:")
+                    st.error("❌ Claude Code CLI Error:")
                     if process.stderr:
                         st.code(process.stderr, language="text")
                     else:
                         st.text("Unknown error occurred")
                 
                 # Save to history
-                if "direct_gemini_history" not in st.session_state:
-                    st.session_state.direct_gemini_history = []
+                if "direct_claude_history" not in st.session_state:
+                    st.session_state.direct_claude_history = []
                 
-                st.session_state.direct_gemini_history.append({
+                st.session_state.direct_claude_history.append({
                     "input": user_input,
                     "output": process.stdout or process.stderr or "No output",
                     "success": process.returncode == 0,
@@ -726,18 +721,18 @@ def gemini_cli_tab(gemini_cli: Optional[OfficialGeminiCLI]):
                 })
                 
             except subprocess.TimeoutExpired:
-                st.error("⏱️ Command timed out after 60 seconds")
+                st.error("⏱️ Command timed out after 120 seconds")
             except Exception as e:
                 st.error(f"❌ Error: {e}")
     
     # Show help
     if show_help:
-        with st.spinner("Getting Gemini CLI help..."):
+        with st.spinner("Getting Claude Code CLI help..."):
             try:
-                help_cmd = ["npx", "--yes", "https://github.com/google-gemini/gemini-cli", "--help"]
+                help_cmd = ["claude", "--help"]
                 help_result = subprocess.run(help_cmd, capture_output=True, text=True, timeout=15)
                 
-                st.subheader("📖 Gemini CLI Help")
+                st.subheader("📖 Claude Code CLI Help")
                 if help_result.stdout:
                     st.code(help_result.stdout, language="text")
                 else:
@@ -763,9 +758,9 @@ def gemini_cli_tab(gemini_cli: Optional[OfficialGeminiCLI]):
             if st.button(button_text, key=f"quick_{i}"):
                 with st.spinner(f"Running: {button_text}"):
                     try:
-                        cmd = ["npx", "--yes", "https://github.com/google-gemini/gemini-cli"]
+                        cmd = ["claude", command]
                         result = subprocess.run(
-                            cmd, input=command, text=True, capture_output=True, timeout=60, cwd=os.getcwd()
+                            cmd, text=True, capture_output=True, timeout=120, cwd=os.getcwd()
                         )
                         
                         st.subheader(f"📋 {button_text} Result")
@@ -780,10 +775,10 @@ def gemini_cli_tab(gemini_cli: Optional[OfficialGeminiCLI]):
                         st.error(f"Error: {e}")
 
     # Command History
-    if "direct_gemini_history" in st.session_state and st.session_state.direct_gemini_history:
+    if "direct_claude_history" in st.session_state and st.session_state.direct_claude_history:
         st.subheader("📜 Recent Commands")
         
-        for entry in reversed(st.session_state.direct_gemini_history[-3:]):
+        for entry in reversed(st.session_state.direct_claude_history[-3:]):
             status_icon = "✅" if entry["success"] else "❌"
             with st.expander(f"{status_icon} {entry['timestamp']}: {entry['input'][:40]}..."):
                 st.markdown(f"**Input:** {entry['input']}")
@@ -804,10 +799,11 @@ def gemini_cli_tab(gemini_cli: Optional[OfficialGeminiCLI]):
         - "Review security practices in the authentication code"
         - "Suggest database optimization strategies"
         
-        **⚡ This is the real Gemini CLI:**
-        - Direct connection to Google's official tool
+        **⚡ This is Claude Code CLI:**
+        - Direct connection to Anthropic's Claude
         - Full repository context awareness
-        - No Python wrapper - pure CLI interface
+        - Advanced code analysis capabilities
+        - Real-time interaction with your codebase
         """)
 
 

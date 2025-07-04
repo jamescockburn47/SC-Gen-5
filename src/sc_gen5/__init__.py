@@ -4,10 +4,10 @@ __version__ = "5.0.0"
 __author__ = "Strategic Counsel"
 __email__ = "contact@strategiccounsel.ai"
 
-from sc_gen5.core.doc_store import DocStore
-from sc_gen5.core.rag_pipeline import RAGPipeline
-from sc_gen5.core.local_llm import LocalLLMGenerator
-from sc_gen5.core.cloud_llm import CloudLLMGenerator, CloudProvider
+from .core.doc_store import DocStore
+from .core.rag_pipeline import RAGPipeline
+from .core.local_llm import LocalLLMGenerator
+from .core.cloud_llm import CloudLLMGenerator, CloudProvider
 
 __all__ = [
     "DocStore",

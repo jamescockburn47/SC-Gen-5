@@ -19,7 +19,8 @@ import {
   Business as BusinessIcon,
   Terminal as TerminalIcon,
   Analytics as AnalyticsIcon,
-  Gavel as GavelIcon
+  Gavel as GavelIcon,
+  Code as CodeIcon
 } from '@mui/icons-material';
 
 interface SidebarProps {
@@ -33,7 +34,8 @@ const menuItems = [
   { text: 'Legal Consultation', icon: <ChatIcon />, path: '/consultation' },
   { text: 'Document Manager', icon: <DocumentIcon />, path: '/documents' },
   { text: 'Companies House', icon: <BusinessIcon />, path: '/companies-house' },
-  { text: 'Gemini Terminal', icon: <TerminalIcon />, path: '/terminal' },
+  { text: 'Claude Code CLI', icon: <CodeIcon />, path: '/claude-cli' },
+  { text: 'Terminal', icon: <TerminalIcon />, path: '/terminal' },
   { text: 'Analytics', icon: <AnalyticsIcon />, path: '/analytics' }
 ];
 

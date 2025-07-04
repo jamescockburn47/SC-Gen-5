@@ -1,5 +1,5 @@
-"""Integrations for external services."""
+"""Integration modules for external services."""
 
-from sc_gen5.integrations.companies_house import CompaniesHouseClient
+from .companies_house import CompaniesHouseClient
 
 __all__ = ["CompaniesHouseClient"] 

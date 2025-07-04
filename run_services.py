@@ -1,210 +1,227 @@
 #!/usr/bin/env python3
-"""Script to run SC Gen 5 services locally for development."""
+"""
+SC Gen 5 Service Runner
+Starts all required services for the SC Gen 5 application.
+"""
 
-import os
 import subprocess
 import sys
 import time
+import signal
+import os
 from pathlib import Path
+import logging
 
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-def check_ollama():
-    """Check if Ollama is running."""
-    try:
-        import requests
-        response = requests.get("http://localhost:11434/api/tags", timeout=5)
-        return response.status_code == 200
-    except Exception:
-        return False
-
-
-def start_ollama():
-    """Start Ollama if not running."""
-    if check_ollama():
-        print("✅ Ollama is already running")
-        return True
-    
-    print("🚀 Starting Ollama...")
-    try:
-        subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+class ServiceRunner:
+    def __init__(self):
+        self.processes = []
+        self.project_root = Path(__file__).parent
         
-        # Wait for Ollama to start
-        for i in range(30):
-            if check_ollama():
-                print("✅ Ollama started successfully")
-                return True
-            time.sleep(1)
-            print(f"⏳ Waiting for Ollama... ({i+1}/30)")
-        
-        print("❌ Failed to start Ollama")
-        return False
-        
-    except FileNotFoundError:
-        print("❌ Ollama not found. Please install Ollama first:")
-        print("   Visit: https://ollama.ai/download")
-        return False
-
-
-def pull_models():
-    """Pull required Ollama models."""
-    models = ["mixtral:latest", "mistral:latest", "phi3:latest"]
-    
-    for model in models:
-        print(f"📥 Pulling model: {model}")
+    def start_fastapi_backend(self):
+        """Start the FastAPI backend server."""
         try:
-            result = subprocess.run(["ollama", "pull", model], capture_output=True, text=True)
-            if result.returncode == 0:
-                print(f"✅ Successfully pulled {model}")
-            else:
-                print(f"⚠️  Failed to pull {model}: {result.stderr}")
-        except Exception as e:
-            print(f"⚠️  Error pulling {model}: {e}")
-
-
-def start_service(name, module, port, env_vars=None):
-    """Start a service using uvicorn."""
-    print(f"🚀 Starting {name} on port {port}")
-    
-    env = os.environ.copy()
-    if env_vars:
-        env.update(env_vars)
-    
-    try:
-        process = subprocess.Popen([
-            sys.executable, "-m", "uvicorn", 
-            module, 
-            "--host", "0.0.0.0", 
-            "--port", str(port),
-            "--reload"
-        ], env=env)
-        
-        print(f"✅ {name} started (PID: {process.pid})")
-        return process
-        
-    except Exception as e:
-        print(f"❌ Failed to start {name}: {e}")
-        return None
-
-
-def start_streamlit():
-    """Start Streamlit UI."""
-    print("🚀 Starting Streamlit UI on port 8501")
-    
-    try:
-        process = subprocess.Popen([
-            sys.executable, "-m", "streamlit", "run", 
-            "src/sc_gen5/ui/app.py",
-            "--server.address", "0.0.0.0",
-            "--server.port", "8501"
-        ])
-        
-        print(f"✅ Streamlit UI started (PID: {process.pid})")
-        return process
-        
-    except Exception as e:
-        print(f"❌ Failed to start Streamlit UI: {e}")
-        return None
-
-
-def main():
-    """Main function to orchestrate service startup."""
-    print("🏛️  Strategic Counsel Gen 5 - Development Server")
-    print("=" * 50)
-    
-    # Add local bin to PATH for streamlit and other tools
-    import os
-    local_bin = os.path.expanduser("~/.local/bin")
-    if local_bin not in os.environ.get("PATH", ""):
-        os.environ["PATH"] = f"{local_bin}:{os.environ.get('PATH', '')}"
-    
-    # Set PYTHONPATH to include src directory
-    src_path = str(Path.cwd() / "src")
-    current_pythonpath = os.environ.get("PYTHONPATH", "")
-    if src_path not in current_pythonpath:
-        os.environ["PYTHONPATH"] = f"{src_path}:{current_pythonpath}" if current_pythonpath else src_path
-    
-    # Check if we're in the right directory
-    if not Path("src/sc_gen5").exists():
-        print("❌ Please run this script from the project root directory")
-        sys.exit(1)
-    
-    # Step 1: Start Ollama
-    if not start_ollama():
-        print("❌ Cannot proceed without Ollama")
-        sys.exit(1)
-    
-    # Step 2: Pull models (optional)
-    pull_choice = input("\n📥 Pull Ollama models? (y/N): ").lower().strip()
-    if pull_choice in ['y', 'yes']:
-        pull_models()
-    
-    # Step 3: Start services
-    print("\n🚀 Starting SC Gen 5 services...")
-    
-    processes = []
-    
-    # Consult Service
-    consult_process = start_service(
-        "Consult Service", 
-        "sc_gen5.services.consult_service:app", 
-        8000
-    )
-    if consult_process:
-        processes.append(("Consult Service", consult_process))
-    
-    time.sleep(2)
-    
-    # Ingest Service  
-    ingest_process = start_service(
-        "Companies House Ingest Service",
-        "sc_gen5.services.ch_ingest_service:app",
-        8001
-    )
-    if ingest_process:
-        processes.append(("Ingest Service", ingest_process))
-    
-    time.sleep(2)
-    
-    # Streamlit UI
-    ui_process = start_streamlit()
-    if ui_process:
-        processes.append(("Streamlit UI", ui_process))
-    
-    # Summary
-    print("\n" + "=" * 50)
-    print("🎉 SC Gen 5 services started!")
-    print("\nEndpoints:")
-    print("📊 Streamlit UI:          http://localhost:8501")
-    print("🔍 Consult API:           http://localhost:8000")
-    print("🏢 Companies House API:   http://localhost:8001") 
-    print("🤖 Ollama API:            http://localhost:11434")
-    print("\nAPI Documentation:")
-    print("📚 Consult API Docs:      http://localhost:8000/docs")
-    print("📚 Ingest API Docs:       http://localhost:8001/docs")
-    
-    print("\n⚠️  Press Ctrl+C to stop all services")
-    
-    try:
-        # Wait for user interrupt
-        while True:
-            time.sleep(1)
+            logger.info("Starting FastAPI backend...")
             
-    except KeyboardInterrupt:
-        print("\n🛑 Stopping services...")
+            # Set environment variables
+            env = os.environ.copy()
+            env['PYTHONPATH'] = str(self.project_root)
+            
+            # Start FastAPI server
+            cmd = [
+                sys.executable, "-m", "uvicorn", 
+                "src.sc_gen5.api.main:app",
+                "--host", "0.0.0.0",
+                "--port", "8000",
+                "--reload"
+            ]
+            
+            process = subprocess.Popen(
+                cmd,
+                env=env,
+                cwd=self.project_root,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                bufsize=1
+            )
+            
+            self.processes.append(("FastAPI Backend", process))
+            logger.info(f"FastAPI backend started with PID: {process.pid}")
+            
+            # Wait a moment for startup
+            time.sleep(2)
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to start FastAPI backend: {e}")
+            return False
+    
+    def start_react_frontend(self):
+        """Start the React frontend development server."""
+        try:
+            frontend_dir = self.project_root / "frontend"
+            if not frontend_dir.exists():
+                logger.error("Frontend directory not found")
+                return False
+                
+            logger.info("Starting React frontend...")
+            
+            # Check if node_modules exists
+            node_modules = frontend_dir / "node_modules"
+            if not node_modules.exists():
+                logger.info("Installing frontend dependencies...")
+                subprocess.run(["npm", "install"], cwd=frontend_dir, check=True)
+            
+            # Start React development server
+            cmd = ["npm", "start"]
+            process = subprocess.Popen(
+                cmd,
+                cwd=frontend_dir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                bufsize=1
+            )
+            
+            self.processes.append(("React Frontend", process))
+            logger.info(f"React frontend started with PID: {process.pid}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to start React frontend: {e}")
+            return False
+    
+    def start_streamlit_ui(self):
+        """Start the Streamlit UI (optional alternative)."""
+        try:
+            logger.info("Starting Streamlit UI...")
+            
+            # Set environment variables
+            env = os.environ.copy()
+            env['PYTHONPATH'] = str(self.project_root)
+            
+            # Start Streamlit
+            cmd = [
+                sys.executable, "-m", "streamlit", "run",
+                "src/sc_gen5/ui/streamlit_app.py",
+                "--server.port", "8501",
+                "--server.address", "0.0.0.0"
+            ]
+            
+            process = subprocess.Popen(
+                cmd,
+                env=env,
+                cwd=self.project_root,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                bufsize=1
+            )
+            
+            self.processes.append(("Streamlit UI", process))
+            logger.info(f"Streamlit UI started with PID: {process.pid}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to start Streamlit UI: {e}")
+            return False
+    
+    def monitor_processes(self):
+        """Monitor running processes and restart if needed."""
+        logger.info("Monitoring services...")
         
-        for name, process in processes:
+        while True:
+            for name, process in self.processes[:]:
+                if process.poll() is not None:
+                    logger.warning(f"{name} process terminated unexpectedly")
+                    self.processes.remove((name, process))
+                    
+                    # Restart the service
+                    if "FastAPI" in name:
+                        self.start_fastapi_backend()
+                    elif "React" in name:
+                        self.start_react_frontend()
+                    elif "Streamlit" in name:
+                        self.start_streamlit_ui()
+            
+            time.sleep(5)
+    
+    def stop_all(self):
+        """Stop all running processes."""
+        logger.info("Stopping all services...")
+        
+        for name, process in self.processes:
             try:
+                logger.info(f"Stopping {name}...")
                 process.terminate()
                 process.wait(timeout=5)
-                print(f"✅ Stopped {name}")
             except subprocess.TimeoutExpired:
+                logger.warning(f"Force killing {name}...")
                 process.kill()
-                print(f"🔪 Force killed {name}")
             except Exception as e:
-                print(f"⚠️  Error stopping {name}: {e}")
+                logger.error(f"Error stopping {name}: {e}")
         
-        print("👋 All services stopped. Goodbye!")
+        self.processes.clear()
+        logger.info("All services stopped")
+    
+    def signal_handler(self, signum, frame):
+        """Handle shutdown signals."""
+        logger.info(f"Received signal {signum}, shutting down...")
+        self.stop_all()
+        sys.exit(0)
 
+def main():
+    """Main entry point."""
+    runner = ServiceRunner()
+    
+    # Set up signal handlers
+    signal.signal(signal.SIGINT, runner.signal_handler)
+    signal.signal(signal.SIGTERM, runner.signal_handler)
+    
+    try:
+        # Start services
+        services_started = 0
+        
+        if runner.start_fastapi_backend():
+            services_started += 1
+            
+        if runner.start_react_frontend():
+            services_started += 1
+            
+        # Optionally start Streamlit UI
+        # if runner.start_streamlit_ui():
+        #     services_started += 1
+        
+        if services_started == 0:
+            logger.error("No services started successfully")
+            return 1
+        
+        logger.info(f"Started {services_started} services successfully")
+        logger.info("Services are running:")
+        logger.info("- FastAPI Backend: http://localhost:8000")
+        logger.info("- React Frontend: http://localhost:3000")
+        logger.info("- API Documentation: http://localhost:8000/docs")
+        logger.info("")
+        logger.info("Press Ctrl+C to stop all services")
+        
+        # Monitor processes
+        runner.monitor_processes()
+        
+    except KeyboardInterrupt:
+        logger.info("Received keyboard interrupt")
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+    finally:
+        runner.stop_all()
+    
+    return 0
 
 if __name__ == "__main__":
-    main() 
+    sys.exit(main()) 

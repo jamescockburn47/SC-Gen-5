@@ -1,17 +1,17 @@
-"""Document store module for managing documents and their embeddings."""
+"""Document store for managing and retrieving legal documents."""
 
-import hashlib
-import json
-import logging
 import os
-from datetime import datetime
+import json
+import hashlib
+import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-
+from typing import Dict, Any, List, Optional, Tuple, Union
+from datetime import datetime
+import mimetypes
 import tiktoken
 
-from sc_gen5.core.ocr import OCREngine
-from sc_gen5.core.vector_store import VectorStore
+from .ocr import OCREngine
+from .vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
 

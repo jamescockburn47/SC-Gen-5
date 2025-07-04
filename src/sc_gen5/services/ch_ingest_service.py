@@ -12,8 +12,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from sc_gen5.core.doc_store import DocStore
-from sc_gen5.integrations.companies_house import CompaniesHouseClient
+from ..core.doc_store import DocStore
+from ..integrations.companies_house import CompaniesHouseClient
 
 # Load environment variables from .env file
 from pathlib import Path

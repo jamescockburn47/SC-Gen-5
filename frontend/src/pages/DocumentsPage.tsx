@@ -553,8 +553,8 @@ const DocumentsPage: React.FC = () => {
                         {formatFileSize(doc.file_size)} • {doc.pages || 0} pages
                       </Typography>
                     <Chip
-                      label={doc.processing_status}
-                      color={getStatusColor(doc.processing_status) as any}
+                      label={doc.processing_status || 'unknown'}
+                      color={getStatusColor(doc.processing_status || 'unknown') as any}
                       size="small"
                       sx={{ mt: 1 }}
                     />
@@ -616,8 +616,8 @@ const DocumentsPage: React.FC = () => {
                       </Box>
                       <Box sx={{ textAlign: 'right' }}>
                         <Chip
-                          label={doc.processing_status}
-                          color={getStatusColor(doc.processing_status) as any}
+                          label={doc.processing_status || 'unknown'}
+                          color={getStatusColor(doc.processing_status || 'unknown') as any}
                         />
                         <Box sx={{ mt: 1 }}>
                           <Button

@@ -1,12 +1,12 @@
-"""RAG pipeline module for coordinating retrieval and generation."""
+"""RAG pipeline for legal document analysis and consultation."""
 
 import logging
 from typing import Any, Dict, List, Optional
 
-from sc_gen5.core.cloud_llm import CloudLLMGenerator, CloudProvider
-from sc_gen5.core.doc_store import DocStore
-from sc_gen5.core.local_llm import LocalLLMGenerator
-from sc_gen5.core.protocols import StrategicProtocols
+from .cloud_llm import CloudLLMGenerator, CloudProvider
+from .doc_store import DocStore
+from .local_llm import LocalLLMGenerator
+from .protocols import StrategicProtocols
 
 logger = logging.getLogger(__name__)
 

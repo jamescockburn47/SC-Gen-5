@@ -10,6 +10,7 @@ import DocumentsPage from './pages/DocumentsPage';
 import CompaniesHousePage from './pages/CompaniesHousePage';
 import TerminalPage from './pages/TerminalPage';
 import AnalyticsPage from './pages/AnalyticsPage';
+import ClaudeCliPage from './pages/ClaudeCliPage';
 
 // Strategic Counsel theme
 const theme = createTheme({
@@ -97,6 +98,7 @@ function App() {
               <Route path="/documents" element={<DocumentsPage />} />
               <Route path="/companies-house" element={<CompaniesHousePage />} />
               <Route path="/terminal" element={<TerminalPage />} />
+              <Route path="/claude-cli" element={<ClaudeCliPage />} />
               <Route path="/analytics" element={<AnalyticsPage />} />
             </Routes>
           </Box>
