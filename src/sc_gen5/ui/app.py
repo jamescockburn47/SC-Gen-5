@@ -14,7 +14,9 @@ import streamlit as st
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
-load_dotenv()
+from pathlib import Path
+env_path = Path(__file__).parent.parent.parent.parent / ".env"
+load_dotenv(env_path)
 
 from sc_gen5.core.doc_store import DocStore
 from sc_gen5.core.rag_pipeline import RAGPipeline

@@ -74,12 +74,24 @@ const TerminalPage: React.FC = () => {
 
       fitAddon.current = new FitAddon();
       const webLinksAddon = new WebLinksAddon();
-      
       terminal.current.loadAddon(fitAddon.current);
       terminal.current.loadAddon(webLinksAddon);
-      
       terminal.current.open(terminalRef.current);
-      fitAddon.current.fit();
+
+      // Only fit if the container has dimensions
+      const fitTerminal = () => {
+        if (
+          terminalRef.current &&
+          terminalRef.current.offsetWidth > 0 &&
+          terminalRef.current.offsetHeight > 0
+        ) {
+          fitAddon.current && fitAddon.current.fit();
+        } else {
+          // Retry after a short delay
+          setTimeout(fitTerminal, 500);
+        }
+      };
+      fitTerminal();
 
       // Welcome message
       terminal.current.writeln('\x1b[1;32m🏛️  Strategic Counsel Gen 5 - Native Terminal Interface\x1b[0m');

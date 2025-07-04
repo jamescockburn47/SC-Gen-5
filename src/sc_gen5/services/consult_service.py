@@ -4,13 +4,21 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
+import io
 
-from fastapi import FastAPI, HTTPException
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
 from sc_gen5.core.doc_store import DocStore
 from sc_gen5.core.rag_pipeline import RAGPipeline
+
+# Load environment variables from .env file
+from pathlib import Path
+env_path = Path(__file__).parent.parent.parent.parent / ".env"
+load_dotenv(env_path)
 
 logger = logging.getLogger(__name__)
 
@@ -186,34 +194,37 @@ async def health() -> HealthResponse:
         raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
 
 
-@app.get("/documents")
+@app.get("/api/documents")
 async def list_documents():
-    """List all documents in the knowledge base."""
+    """List all documents in the knowledge base, including extraction method, quality, and pages."""
     if not doc_store:
         raise HTTPException(status_code=500, detail="Document store not initialized")
-    
     try:
         documents = doc_store.list_documents()
+        # Ensure extraction method, quality, and pages are present in each document
+        for doc in documents:
+            doc.setdefault("extraction_method", doc.get("extraction_method", "unknown"))
+            doc.setdefault("quality_score", doc.get("quality_score", None))
+            doc.setdefault("pages", doc.get("pages", None))
         return {"documents": documents, "total": len(documents)}
-        
     except Exception as e:
         logger.error(f"Failed to list documents: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to list documents: {str(e)}")
 
 
-@app.get("/documents/{doc_id}")
+@app.get("/api/documents/{doc_id}")
 async def get_document(doc_id: str):
-    """Get document metadata by ID."""
+    """Get document metadata by ID, including extraction method, quality, and pages."""
     if not doc_store:
         raise HTTPException(status_code=500, detail="Document store not initialized")
-    
     try:
         document = doc_store.get_document(doc_id)
         if not document:
             raise HTTPException(status_code=404, detail="Document not found")
-        
+        document.setdefault("extraction_method", document.get("extraction_method", "unknown"))
+        document.setdefault("quality_score", document.get("quality_score", None))
+        document.setdefault("pages", document.get("pages", None))
         return document
-        
     except HTTPException:
         raise
     except Exception as e:
@@ -263,6 +274,73 @@ async def get_stats():
     except Exception as e:
         logger.error(f"Failed to get stats: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get stats: {str(e)}")
+
+
+@app.post("/api/documents/upload")
+async def upload_document(file: UploadFile = File(...), filename: str = Form(...)):
+    """Upload a document and add it to the document store."""
+    if not doc_store:
+        raise HTTPException(status_code=500, detail="Document store not initialized")
+    try:
+        file_bytes = await file.read()
+        doc_id = doc_store.add_document(
+            file_bytes=file_bytes,
+            filename=filename,
+            metadata={"source": "upload"}
+        )
+        document = doc_store.get_document(doc_id)
+        return {"document": document}
+    except Exception as e:
+        logger.error(f"Failed to upload document: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to upload document: {str(e)}")
+
+
+@app.get("/api/documents/{doc_id}/text")
+async def get_document_text(doc_id: str):
+    """Get the extracted text for a document."""
+    if not doc_store:
+        raise HTTPException(status_code=500, detail="Document store not initialized")
+    try:
+        text = doc_store.get_document_text(doc_id)
+        if not text:
+            return PlainTextResponse("No text content available", status_code=200)
+        return {"text": text}
+    except Exception as e:
+        logger.error(f"Failed to get document text: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get document text: {str(e)}")
+
+
+@app.get("/api/documents/{doc_id}/download")
+async def download_document(doc_id: str):
+    """Download the original file for a document."""
+    if not doc_store:
+        raise HTTPException(status_code=500, detail="Document store not initialized")
+    try:
+        file_bytes, filename = doc_store.get_document_file(doc_id)
+        return StreamingResponse(io.BytesIO(file_bytes),
+                                 media_type="application/octet-stream",
+                                 headers={"Content-Disposition": f"attachment; filename={filename}"})
+    except Exception as e:
+        logger.error(f"Failed to download document: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to download document: {str(e)}")
+
+
+@app.post("/api/documents/{doc_id}/reprocess")
+async def reprocess_document(doc_id: str):
+    """Force OCR reprocessing of a document."""
+    if not doc_store:
+        raise HTTPException(status_code=500, detail="Document store not initialized")
+    try:
+        # Get the original file
+        file_bytes, filename = doc_store.get_document_file(doc_id)
+        # Re-add the document with force_ocr=True (simulate by removing and re-adding)
+        doc_store.delete_document(doc_id)
+        new_doc_id = doc_store.add_document(file_bytes, filename, metadata={"force_ocr": True})
+        document = doc_store.get_document(new_doc_id)
+        return {"document": document}
+    except Exception as e:
+        logger.error(f"Failed to reprocess document: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to reprocess document: {str(e)}")
 
 
 def main():

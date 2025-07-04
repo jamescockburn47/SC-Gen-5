@@ -27,7 +27,8 @@ import {
   Menu,
   MenuItem,
   Tabs,
-  Tab
+  Tab,
+  Snackbar
 } from '@mui/material';
 import {
   Description as DocumentIcon,
@@ -39,21 +40,27 @@ import {
   FilterList as FilterIcon,
   Refresh as RefreshIcon,
   GetApp as ExtractIcon,
-  TextSnippet as OcrIcon
+  TextSnippet as OcrIcon,
+  Refresh as ReprocessIcon,
+  CheckCircle as QualityIcon,
+  Pages as PagesIcon
 } from '@mui/icons-material';
 import { useDropzone } from 'react-dropzone';
 import axios from 'axios';
 
 interface Document {
-  id: string;
+  doc_id: string;
   filename: string;
-  file_type: string;
-  size: number;
-  upload_date: string;
-  processing_status: 'pending' | 'processing' | 'completed' | 'failed';
-  pages: number;
-  ocr_engine?: string;
+  file_type?: string;
+  file_size: number;
+  created_at: string;
+  processing_status?: 'pending' | 'processing' | 'completed' | 'failed';
+  pages?: number;
   extraction_method?: string;
+  quality_score?: number;
+  text_length?: number;
+  num_chunks?: number;
+  ocr_engine?: string;
   text_preview?: string;
   metadata?: any;
 }
@@ -90,6 +97,12 @@ const DocumentsPage: React.FC = () => {
   const [tabValue, setTabValue] = useState(0);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [documentText, setDocumentText] = useState<string>('');
+  const [reprocessingDoc, setReprocessingDoc] = useState<string | null>(null);
+  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' }>({
+    open: false,
+    message: '',
+    severity: 'info'
+  });
 
   // File upload with drag & drop
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -112,6 +125,11 @@ const DocumentsPage: React.FC = () => {
       setDocuments(response.data.documents || []);
     } catch (error) {
       console.error('Failed to load documents:', error);
+      setSnackbar({
+        open: true,
+        message: 'Failed to load documents',
+        severity: 'error'
+      });
     } finally {
       setLoading(false);
     }
@@ -139,13 +157,19 @@ const DocumentsPage: React.FC = () => {
         });
         
         // Add the new document to the list
-        setDocuments(prev => [...prev, response.data.document]);
+        setDocuments(prev => [...prev, response.data]);
         
         // Clear upload progress
         setUploadProgress(prev => {
           const newProgress = { ...prev };
           delete newProgress[file.name];
           return newProgress;
+        });
+        
+        setSnackbar({
+          open: true,
+          message: `Successfully uploaded ${file.name}`,
+          severity: 'success'
         });
         
       } catch (error) {
@@ -155,6 +179,11 @@ const DocumentsPage: React.FC = () => {
           delete newProgress[file.name];
           return newProgress;
         });
+        setSnackbar({
+          open: true,
+          message: `Failed to upload ${file.name}`,
+          severity: 'error'
+        });
       }
     }
   }
@@ -162,9 +191,19 @@ const DocumentsPage: React.FC = () => {
   const handleDeleteDocument = async (docId: string) => {
     try {
       await axios.delete(`/api/documents/${docId}`);
-      setDocuments(prev => prev.filter(doc => doc.id !== docId));
+      setDocuments(prev => prev.filter(doc => doc.doc_id !== docId));
+      setSnackbar({
+        open: true,
+        message: 'Document deleted successfully',
+        severity: 'success'
+      });
     } catch (error) {
       console.error('Failed to delete document:', error);
+      setSnackbar({
+        open: true,
+        message: 'Failed to delete document',
+        severity: 'error'
+      });
     }
   };
 
@@ -174,7 +213,7 @@ const DocumentsPage: React.FC = () => {
     
     // Load document text
     try {
-      const response = await axios.get(`/api/documents/${document.id}/text`);
+      const response = await axios.get(`/api/documents/${document.doc_id}/text`);
       setDocumentText(response.data.text || 'No text content available');
     } catch (error) {
       setDocumentText('Failed to load document text');
@@ -195,17 +234,41 @@ const DocumentsPage: React.FC = () => {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
+      
+      setSnackbar({
+        open: true,
+        message: 'Document downloaded successfully',
+        severity: 'success'
+      });
     } catch (error) {
       console.error('Download failed:', error);
+      setSnackbar({
+        open: true,
+        message: 'Failed to download document',
+        severity: 'error'
+      });
     }
   };
 
   const handleReprocessDocument = async (docId: string) => {
+    setReprocessingDoc(docId);
     try {
-      await axios.post(`/api/documents/${docId}/reprocess`);
-      loadDocuments(); // Refresh document list
+      const response = await axios.post(`/api/documents/${docId}/reprocess`);
+      await loadDocuments(); // Refresh document list
+      setSnackbar({
+        open: true,
+        message: 'Document reprocessed successfully',
+        severity: 'success'
+      });
     } catch (error) {
       console.error('Reprocessing failed:', error);
+      setSnackbar({
+        open: true,
+        message: 'Failed to reprocess document',
+        severity: 'error'
+      });
+    } finally {
+      setReprocessingDoc(null);
     }
   };
 
@@ -230,6 +293,21 @@ const DocumentsPage: React.FC = () => {
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const getQualityColor = (score: number | undefined) => {
+    if (score === undefined || score === null) return 'default';
+    if (score >= 0.8) return 'success';
+    if (score >= 0.6) return 'warning';
+    return 'error';
+  };
+
+  const getExtractionMethodColor = (method: string | undefined) => {
+    switch (method) {
+      case 'direct': return 'success';
+      case 'ocr': return 'warning';
+      default: return 'default';
+    }
   };
 
   return (
@@ -311,10 +389,10 @@ const DocumentsPage: React.FC = () => {
                 <TableHead>
                   <TableRow>
                     <TableCell>Filename</TableCell>
-                    <TableCell>Type</TableCell>
-                    <TableCell>Size</TableCell>
+                    <TableCell>Extraction Method</TableCell>
+                    <TableCell>Quality Score</TableCell>
                     <TableCell>Pages</TableCell>
-                    <TableCell>Status</TableCell>
+                    <TableCell>Size</TableCell>
                     <TableCell>Upload Date</TableCell>
                     <TableCell>Actions</TableCell>
                   </TableRow>
@@ -338,22 +416,42 @@ const DocumentsPage: React.FC = () => {
                     </TableRow>
                   ) : (
                     filteredDocuments.map((doc) => (
-                      <TableRow key={doc.id}>
+                      <TableRow key={doc.doc_id}>
                         <TableCell>{doc.filename}</TableCell>
                         <TableCell>
-                          <Chip label={doc.file_type.toUpperCase()} size="small" />
-                        </TableCell>
-                        <TableCell>{formatFileSize(doc.size)}</TableCell>
-                        <TableCell>{doc.pages || '-'}</TableCell>
-                        <TableCell>
-                          <Chip
-                            label={doc.processing_status}
-                            color={getStatusColor(doc.processing_status) as any}
+                          <Chip 
+                            label={doc.extraction_method || 'unknown'} 
+                            color={getExtractionMethodColor(doc.extraction_method) as any}
                             size="small"
+                            icon={doc.extraction_method === 'ocr' ? <OcrIcon /> : undefined}
                           />
                         </TableCell>
                         <TableCell>
-                          {new Date(doc.upload_date).toLocaleDateString()}
+                          {doc.quality_score !== undefined && doc.quality_score !== null ? (
+                            <Chip
+                              label={`${(doc.quality_score * 100).toFixed(0)}%`}
+                              color={getQualityColor(doc.quality_score) as any}
+                              size="small"
+                              icon={<QualityIcon />}
+                            />
+                          ) : (
+                            <Typography variant="body2" color="text.secondary">-</Typography>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {doc.pages ? (
+                            <Chip
+                              label={`${doc.pages} pages`}
+                              size="small"
+                              icon={<PagesIcon />}
+                            />
+                          ) : (
+                            <Typography variant="body2" color="text.secondary">-</Typography>
+                          )}
+                        </TableCell>
+                        <TableCell>{formatFileSize(doc.file_size)}</TableCell>
+                        <TableCell>
+                          {new Date(doc.created_at).toLocaleDateString()}
                         </TableCell>
                         <TableCell>
                           <Box sx={{ display: 'flex', gap: 1 }}>
@@ -361,7 +459,6 @@ const DocumentsPage: React.FC = () => {
                               <IconButton
                                 size="small"
                                 onClick={() => handleViewDocument(doc)}
-                                disabled={doc.processing_status !== 'completed'}
                               >
                                 <ViewIcon />
                               </IconButton>
@@ -369,24 +466,24 @@ const DocumentsPage: React.FC = () => {
                             <Tooltip title="Download">
                               <IconButton
                                 size="small"
-                                onClick={() => handleDownloadDocument(doc.id, doc.filename)}
+                                onClick={() => handleDownloadDocument(doc.doc_id, doc.filename)}
                               >
                                 <DownloadIcon />
                               </IconButton>
                             </Tooltip>
-                            <Tooltip title="Reprocess">
+                            <Tooltip title="Reprocess Document">
                               <IconButton
                                 size="small"
-                                onClick={() => handleReprocessDocument(doc.id)}
-                                disabled={doc.processing_status === 'processing'}
+                                onClick={() => handleReprocessDocument(doc.doc_id)}
+                                disabled={reprocessingDoc === doc.doc_id}
                               >
-                                <ExtractIcon />
+                                <ReprocessIcon />
                               </IconButton>
                             </Tooltip>
                             <Tooltip title="Delete">
                               <IconButton
                                 size="small"
-                                onClick={() => handleDeleteDocument(doc.id)}
+                                onClick={() => handleDeleteDocument(doc.doc_id)}
                                 color="error"
                               >
                                 <DeleteIcon />
@@ -446,15 +543,15 @@ const DocumentsPage: React.FC = () => {
           </Typography>
           <Grid container spacing={2}>
             {filteredDocuments.map((doc) => (
-              <Grid item xs={12} sm={6} md={4} key={doc.id}>
+              <Grid item xs={12} sm={6} md={4} key={doc.doc_id}>
                 <Card>
                   <CardContent>
                     <Typography variant="subtitle1" noWrap>
                       {doc.filename}
                     </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {formatFileSize(doc.size)} • {doc.pages} pages
-                    </Typography>
+                                          <Typography variant="body2" color="text.secondary">
+                        {formatFileSize(doc.file_size)} • {doc.pages || 0} pages
+                      </Typography>
                     <Chip
                       label={doc.processing_status}
                       color={getStatusColor(doc.processing_status) as any}
@@ -478,7 +575,7 @@ const DocumentsPage: React.FC = () => {
                       <Button
                         size="small"
                         startIcon={<DownloadIcon />}
-                        onClick={() => handleDownloadDocument(doc.id, doc.filename)}
+                        onClick={() => handleDownloadDocument(doc.doc_id, doc.filename)}
                       >
                         Download
                       </Button>
@@ -501,15 +598,15 @@ const DocumentsPage: React.FC = () => {
           {documents
             .filter(doc => doc.processing_status === 'processing' || doc.processing_status === 'pending')
             .map((doc) => (
-              <Grid item xs={12} key={doc.id}>
+              <Grid item xs={12} key={doc.doc_id}>
                 <Card>
                   <CardContent>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <Box>
                         <Typography variant="h6">{doc.filename}</Typography>
                         <Typography variant="body2" color="text.secondary">
-                          {doc.file_type.toUpperCase()} • {formatFileSize(doc.size)}
-                          {doc.pages && ` • ${doc.pages} pages`}
+                                                     {doc.file_type?.toUpperCase() || 'UNKNOWN'} • {formatFileSize(doc.file_size)}
+                            {doc.pages && ` • ${doc.pages} pages`}
                         </Typography>
                         {doc.ocr_engine && (
                           <Typography variant="body2" color="text.secondary">
@@ -555,19 +652,21 @@ const DocumentsPage: React.FC = () => {
             <Typography variant="h6">
               {selectedDocument?.filename}
             </Typography>
-            <Box>
-              {selectedDocument?.ocr_engine && (
-                <Chip
-                  icon={<OcrIcon />}
-                  label={`OCR: ${selectedDocument.ocr_engine}`}
-                  size="small"
-                  sx={{ mr: 1 }}
-                />
-              )}
+            <Box sx={{ display: 'flex', gap: 1 }}>
               {selectedDocument?.extraction_method && (
                 <Chip
                   label={selectedDocument.extraction_method}
+                  color={getExtractionMethodColor(selectedDocument.extraction_method) as any}
                   size="small"
+                  icon={selectedDocument.extraction_method === 'ocr' ? <OcrIcon /> : undefined}
+                />
+              )}
+              {selectedDocument?.quality_score !== undefined && selectedDocument?.quality_score !== null && (
+                <Chip
+                  label={`Quality: ${(selectedDocument.quality_score * 100).toFixed(0)}%`}
+                  color={getQualityColor(selectedDocument.quality_score) as any}
+                  size="small"
+                  icon={<QualityIcon />}
                 />
               )}
             </Box>
@@ -576,7 +675,15 @@ const DocumentsPage: React.FC = () => {
         <DialogContent>
           <Box sx={{ mb: 2 }}>
             <Typography variant="body2" color="text.secondary">
-              {selectedDocument && `${selectedDocument.pages} pages • ${formatFileSize(selectedDocument.size)} • Uploaded ${new Date(selectedDocument.upload_date).toLocaleDateString()}`}
+              {selectedDocument && (
+                <>
+                  {selectedDocument.pages && `${selectedDocument.pages} pages • `}
+                  {formatFileSize(selectedDocument.file_size)} • 
+                  Uploaded {new Date(selectedDocument.created_at).toLocaleDateString()}
+                  {selectedDocument.text_length && ` • ${selectedDocument.text_length.toLocaleString()} characters`}
+                  {selectedDocument.num_chunks && ` • ${selectedDocument.num_chunks} chunks`}
+                </>
+              )}
             </Typography>
           </Box>
           
@@ -589,18 +696,44 @@ const DocumentsPage: React.FC = () => {
         <DialogActions>
           <Button onClick={() => setViewDialogOpen(false)}>Close</Button>
           {selectedDocument && (
-            <Button
-              startIcon={<DownloadIcon />}
-              onClick={() => {
-                handleDownloadDocument(selectedDocument.id, selectedDocument.filename);
-                setViewDialogOpen(false);
-              }}
-            >
-              Download
-            </Button>
+            <>
+              <Button
+                startIcon={<ReprocessIcon />}
+                onClick={() => {
+                  handleReprocessDocument(selectedDocument.doc_id);
+                  setViewDialogOpen(false);
+                }}
+                disabled={reprocessingDoc === selectedDocument.doc_id}
+              >
+                Reprocess
+              </Button>
+              <Button
+                startIcon={<DownloadIcon />}
+                onClick={() => {
+                  handleDownloadDocument(selectedDocument.doc_id, selectedDocument.filename);
+                  setViewDialogOpen(false);
+                }}
+              >
+                Download
+              </Button>
+            </>
           )}
         </DialogActions>
       </Dialog>
+
+      {/* Snackbar for notifications */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+      >
+        <Alert 
+          onClose={() => setSnackbar(prev => ({ ...prev, open: false }))} 
+          severity={snackbar.severity}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

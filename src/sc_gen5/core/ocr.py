@@ -74,63 +74,45 @@ class OCREngine:
             "ocr_engine": self.engine,
             "extraction_method": "unknown"
         }
-        
         # First try to extract text directly from PDF
         try:
             reader = PdfReader(io.BytesIO(pdf_bytes))
             metadata["pages"] = len(reader.pages)
-            
             direct_text_parts = []
             for page_num, page in enumerate(reader.pages):
                 page_text = page.extract_text()
-                if page_text.strip():
+                if page_text and page_text.strip():
                     direct_text_parts.append(f"\n--- Page {page_num + 1} ---\n{page_text}")
-            
             direct_text = "\n".join(direct_text_parts).strip()
-            
             # Assess quality of direct extraction
-            if direct_text:
-                quality_score = self._assess_direct_text_quality(direct_text)
-                logger.info(f"Direct PDF extraction: {len(direct_text)} chars, quality: {quality_score:.2f}")
-                
-                # Use direct text if it's good quality (much higher threshold)
-                if quality_score > 0.7 and len(direct_text) > 200:
-                    metadata["extraction_method"] = "direct"
-                    metadata["quality_score"] = quality_score
-                    logger.info(f"✅ Using direct PDF text extraction for {filename}")
-                    return direct_text, metadata
-                elif quality_score > 0.4 and len(direct_text) > 500:
-                    # Lower quality but substantial text - still prefer direct
-                    metadata["extraction_method"] = "direct"
-                    metadata["quality_score"] = quality_score
-                    logger.info(f"✅ Using direct PDF text extraction (lower quality) for {filename}")
-                    return direct_text, metadata
-                else:
-                    logger.info(f"⚠️ Direct extraction quality too low ({quality_score:.2f}), trying OCR")
+            quality_score = self._assess_direct_text_quality(direct_text) if direct_text else 0.0
+            logger.info(f"Direct PDF extraction: {len(direct_text)} chars, quality: {quality_score:.2f}")
+            # Use direct text if it's not empty and not obviously garbage
+            if direct_text and quality_score > 0.2:
+                metadata["extraction_method"] = "direct"
+                metadata["quality_score"] = quality_score
+                logger.info(f"✅ Using direct PDF text extraction for {filename}")
+                return direct_text, metadata
             else:
-                logger.info(f"⚠️ No direct text found in PDF, trying OCR")
-                
+                logger.info(f"⚠️ Direct extraction quality too low ({quality_score:.2f}), trying OCR")
         except Exception as e:
             logger.warning(f"Direct PDF text extraction failed: {e}")
-        
         # Fall back to OCR on PDF images
         logger.info(f"🔄 Falling back to OCR for {filename}")
         try:
             images = convert_from_bytes(pdf_bytes, dpi=300)
             metadata["extraction_method"] = "ocr"
-            
             text_parts = []
             for page_num, image in enumerate(images):
                 page_text = self._ocr_image(image)
                 if page_text.strip():
                     text_parts.append(f"\n--- Page {page_num + 1} ---\n{page_text}")
-                    
             ocr_text = "\n".join(text_parts)
             if ocr_text.strip():
+                metadata["quality_score"] = self._assess_direct_text_quality(ocr_text)
                 return ocr_text, metadata
             else:
                 raise RuntimeError("OCR produced no readable text")
-                    
         except Exception as e:
             logger.error(f"PDF OCR extraction failed: {e}")
             raise RuntimeError(f"Failed to extract text from PDF: {e}")

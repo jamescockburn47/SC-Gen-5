@@ -7,12 +7,18 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from sc_gen5.core.doc_store import DocStore
 from sc_gen5.integrations.companies_house import CompaniesHouseClient
+
+# Load environment variables from .env file
+from pathlib import Path
+env_path = Path(__file__).parent.parent.parent.parent / ".env"
+load_dotenv(env_path)
 
 logger = logging.getLogger(__name__)
 

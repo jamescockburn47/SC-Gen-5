@@ -5,6 +5,13 @@ import os
 from enum import Enum
 from typing import Any, Dict, Optional
 
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+from pathlib import Path
+env_path = Path(__file__).parent.parent.parent.parent / ".env"
+load_dotenv(env_path)
+
 logger = logging.getLogger(__name__)
 
 

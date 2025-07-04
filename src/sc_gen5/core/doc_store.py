@@ -144,6 +144,9 @@ class DocStore:
                 "num_chunks": len(chunks),
                 "chunk_ids": chunk_ids,
                 "created_at": datetime.now().isoformat(),
+                "extraction_method": ocr_metadata.get("extraction_method", "unknown"),
+                "quality_score": ocr_metadata.get("quality_score", None),
+                "pages": ocr_metadata.get("pages", None),
                 **ocr_metadata,
                 **(metadata or {})
             }
@@ -191,7 +194,12 @@ class DocStore:
 
     def get_document(self, doc_id: str) -> Optional[Dict[str, Any]]:
         """Get document metadata by ID."""
-        return self.documents.get(doc_id)
+        doc = self.documents.get(doc_id)
+        if doc:
+            doc.setdefault("extraction_method", doc.get("extraction_method", "unknown"))
+            doc.setdefault("quality_score", doc.get("quality_score", None))
+            doc.setdefault("pages", doc.get("pages", None))
+        return doc
 
     def get_document_chunks(self, doc_id: str) -> List[Dict[str, Any]]:
         """Get all chunks for a document."""
@@ -232,7 +240,12 @@ class DocStore:
 
     def list_documents(self) -> List[Dict[str, Any]]:
         """List all documents."""
-        return list(self.documents.values())
+        docs = list(self.documents.values())
+        for doc in docs:
+            doc.setdefault("extraction_method", doc.get("extraction_method", "unknown"))
+            doc.setdefault("quality_score", doc.get("quality_score", None))
+            doc.setdefault("pages", doc.get("pages", None))
+        return docs
 
     def get_stats(self) -> Dict[str, Any]:
         """Get document store statistics."""
@@ -422,4 +435,24 @@ class DocStore:
             max(0, 1.0 - artifact_ratio * 5) * 0.1  # 10% - fewer artifacts
         )
         
-        return min(1.0, max(0.0, quality_score)) 
+        return min(1.0, max(0.0, quality_score))
+
+    def get_document_text(self, doc_id: str) -> str:
+        """Return the full extracted text for a document by concatenating all its chunks."""
+        chunks = self.get_document_chunks(doc_id)
+        if not chunks:
+            return ""
+        return "\n".join(chunk.get("text", "") for chunk in chunks if chunk.get("text"))
+
+    def get_document_file(self, doc_id: str) -> Tuple[bytes, str]:
+        """Return the original file bytes and filename for a document."""
+        doc = self.get_document(doc_id)
+        if not doc:
+            raise FileNotFoundError(f"Document {doc_id} not found")
+        uploads_dir = self.data_dir / "uploads"
+        file_path = uploads_dir / f"{doc_id}_{doc['filename']}"
+        if not file_path.exists():
+            raise FileNotFoundError(f"Original file for {doc_id} not found")
+        with open(file_path, "rb") as f:
+            file_bytes = f.read()
+        return file_bytes, doc["filename"] 
