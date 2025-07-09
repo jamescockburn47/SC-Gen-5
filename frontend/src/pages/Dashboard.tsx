@@ -23,8 +23,11 @@ import {
   Warning as WarningIcon,
   Description as DocumentIcon,
   Business as BusinessIcon,
-  Analytics as AnalyticsIcon
+  Analytics as AnalyticsIcon,
+  Psychology as RAGIcon,
+  AutoAwesome as AIIcon
 } from '@mui/icons-material';
+import { useRAGStatus, useHardwareStatus } from '../api/rag';
 
 interface SystemStats {
   gpu: { usage: number; memory: string };
@@ -59,17 +62,25 @@ const Dashboard: React.FC = () => {
     avgResponseTime: '0s'
   });
 
+  // RAG v2 status hooks
+  const { data: ragStatus, isLoading: ragLoading } = useRAGStatus();
+  const { data: hardwareStatus, isLoading: hardwareLoading } = useHardwareStatus();
+
   React.useEffect(() => {
     fetchDashboardData();
-    // Set placeholder data until real system monitoring is implemented
-    setSystemStats({
-      gpu: { usage: 0, memory: 'N/A' },
-      ram: { usage: 0, memory: 'N/A' },
-      cpu: { usage: 0, cores: 0 },
-      storage: { usage: 0, space: 'N/A' }
-    });
-    setServices([]);
-    setRecentActivity([]);
+    fetchSystemStats();
+    fetchServices();
+    updateRecentActivity();
+    
+    // Update system stats every 10 seconds
+    const statsInterval = setInterval(fetchSystemStats, 10000);
+    // Update dashboard data every 30 seconds
+    const dataInterval = setInterval(fetchDashboardData, 30000);
+    
+    return () => {
+      clearInterval(statsInterval);
+      clearInterval(dataInterval);
+    };
   }, []);
 
   const fetchDashboardData = async () => {
@@ -82,6 +93,85 @@ const Dashboard: React.FC = () => {
     } catch (error) {
       console.log('Using development mode - API not available');
     }
+  };
+  
+  const fetchSystemStats = async () => {
+    try {
+      const response = await fetch('/api/system/stats');
+      if (response.ok) {
+        const data = await response.json();
+        setSystemStats(data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch system stats:', error);
+      // Set fallback data
+      setSystemStats({
+        gpu: { usage: 0, memory: 'N/A' },
+        ram: { usage: 0, memory: 'N/A' },
+        cpu: { usage: 0, cores: 0 },
+        storage: { usage: 0, space: 'N/A' }
+      });
+    }
+  };
+  
+  const fetchServices = async () => {
+    try {
+      // Check which services are running
+      const serviceChecks = [
+        { name: 'FastAPI Backend', port: 8001, endpoint: '/api/rag/status' },
+        { name: 'React Frontend', port: 3000, endpoint: null },
+      ];
+      
+      const serviceStatuses = await Promise.all(
+        serviceChecks.map(async (service) => {
+          try {
+            if (service.endpoint) {
+              const response = await fetch(`http://localhost:${service.port}${service.endpoint}`, {
+                signal: AbortSignal.timeout(2000)
+              });
+              return {
+                ...service,
+                status: response.ok ? 'running' as const : 'stopped' as const
+              };
+            } else {
+              // For services without health endpoints, assume running if we can reach this code
+              return { ...service, status: 'running' as const };
+            }
+          } catch {
+            return { ...service, status: 'stopped' as const };
+          }
+        })
+      );
+      
+      setServices(serviceStatuses);
+    } catch (error) {
+      console.error('Failed to check services:', error);
+      setServices([]);
+    }
+  };
+  
+  const updateRecentActivity = () => {
+    // Simulate recent activity based on current system state
+    const now = new Date();
+    const activities: Activity[] = [
+      {
+        action: 'System monitoring started',
+        task: 'Dashboard initialization',
+        time: now.toLocaleTimeString()
+      },
+      {
+        action: 'API services checked',
+        task: 'Service health monitoring',
+        time: new Date(now.getTime() - 30000).toLocaleTimeString()
+      },
+      {
+        action: 'System stats updated',
+        task: 'Performance monitoring',
+        time: new Date(now.getTime() - 60000).toLocaleTimeString()
+      }
+    ];
+    
+    setRecentActivity(activities);
   };
 
   return (
@@ -161,6 +251,151 @@ const Dashboard: React.FC = () => {
                   </Box>
                 </Grid>
               </Grid>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Simple RAG System Status */}
+        <Grid item xs={12}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <RAGIcon color="primary" />
+                Simple RAG System Status
+              </Typography>
+              
+              {ragLoading ? (
+                <LinearProgress sx={{ mb: 2 }} />
+              ) : (
+                <Grid container spacing={2}>
+                  {/* Models Status */}
+                  <Grid item xs={12} md={4}>
+                    <Box>
+                      <Typography variant="subtitle2" gutterBottom>AI Models (Lazy Loading)</Typography>
+                      <List dense>
+                        <ListItem>
+                          <ListItemIcon>
+                            <AIIcon color={ragStatus?.models?.utility ? "success" : "info"} />
+                          </ListItemIcon>
+                          <ListItemText 
+                            primary="Mistral-7B (Main)" 
+                            secondary={ragStatus?.models?.utility ? "Loaded - Ready for use" : "Will load on first use"}
+                          />
+                          <Chip 
+                            label={ragStatus?.models?.utility ? "Ready" : "Lazy Load"} 
+                            color={ragStatus?.models?.utility ? "success" : "info"}
+                            size="small"
+                          />
+                        </ListItem>
+                        <ListItem>
+                          <ListItemIcon>
+                            <AIIcon color={ragStatus?.models?.reasoning ? "success" : "info"} />
+                          </ListItemIcon>
+                          <ListItemText 
+                            primary="Mistral-7B (Generation)" 
+                            secondary={ragStatus?.models?.reasoning ? "Loaded - Answer Generation" : "Will load on first use"}
+                          />
+                          <Chip 
+                            label={ragStatus?.models?.reasoning ? "Ready" : "Lazy Load"} 
+                            color={ragStatus?.models?.reasoning ? "success" : "info"}
+                            size="small"
+                          />
+                        </ListItem>
+                        <ListItem>
+                          <ListItemIcon>
+                            <MemoryIcon color={ragStatus?.models?.embedder ? "success" : "warning"} />
+                          </ListItemIcon>
+                          <ListItemText 
+                            primary="BGE Embeddings" 
+                            secondary={ragStatus?.models?.embedder ? "Loaded - Semantic Search" : "Not loaded"}
+                          />
+                          <Chip 
+                            label={ragStatus?.models?.embedder ? "Ready" : "Loading"} 
+                            color={ragStatus?.models?.embedder ? "success" : "warning"}
+                            size="small"
+                          />
+                        </ListItem>
+                      </List>
+                    </Box>
+                  </Grid>
+                  
+                  {/* Vector Stores */}
+                  <Grid item xs={12} md={4}>
+                    <Box>
+                      <Typography variant="subtitle2" gutterBottom>Vector Stores</Typography>
+                      <List dense>
+                        <ListItem>
+                          <ListItemIcon>
+                            <StorageIcon color={ragStatus?.documents?.indexed ? "success" : "warning"} />
+                          </ListItemIcon>
+                          <ListItemText 
+                            primary="Document Store" 
+                            secondary={`${ragStatus?.documents?.count || 0} documents (${ragStatus?.chunks?.count || 0} chunks)`}
+                          />
+                        </ListItem>
+                        <ListItem>
+                          <ListItemIcon>
+                            <StorageIcon color={ragStatus?.ready ? "success" : "warning"} />
+                          </ListItemIcon>
+                          <ListItemText 
+                            primary="Vector Index" 
+                            secondary={ragStatus?.ready ? "Ready" : "Not Ready"}
+                          />
+                        </ListItem>
+                        <ListItem>
+                          <ListItemIcon>
+                            <StorageIcon color={ragStatus?.status === "ready" ? "success" : "warning"} />
+                          </ListItemIcon>
+                          <ListItemText 
+                            primary="System Status" 
+                            secondary={ragStatus?.message || "Checking..."}
+                          />
+                        </ListItem>
+                      </List>
+                    </Box>
+                  </Grid>
+                  
+                  {/* Hardware Status */}
+                  <Grid item xs={12} md={4}>
+                    <Box>
+                      <Typography variant="subtitle2" gutterBottom>Hardware Optimization</Typography>
+                      {hardwareLoading ? (
+                        <LinearProgress />
+                      ) : (
+                        <List dense>
+                          <ListItem>
+                            <ListItemIcon>
+                              <CheckIcon color={hardwareStatus?.gpu_available ? "success" : "warning"} />
+                            </ListItemIcon>
+                            <ListItemText 
+                              primary="GPU Status" 
+                              secondary={hardwareStatus?.gpu_available ? "Available" : "CPU Only"}
+                            />
+                          </ListItem>
+                          <ListItem>
+                            <ListItemIcon>
+                              <MemoryIcon color="info" />
+                            </ListItemIcon>
+                            <ListItemText 
+                              primary="Memory Usage" 
+                              secondary={`${hardwareStatus?.memory_usage?.toFixed(1) || 0}GB / ${hardwareStatus?.total_memory?.toFixed(1) || 0}GB`}
+                            />
+                          </ListItem>
+                          <ListItem>
+                            <ListItemIcon>
+                              <SpeedIcon color="info" />
+                            </ListItemIcon>
+                            <ListItemText 
+                              primary="System Status" 
+                              secondary="CPU-Based Generation"
+                            />
+                          </ListItem>
+                        </List>
+                      )}
+                    </Box>
+                  </Grid>
+                </Grid>
+              )}
             </CardContent>
           </Card>
         </Grid>
@@ -294,11 +529,12 @@ const Dashboard: React.FC = () => {
         <Grid item xs={12}>
           <Alert severity="info">
             <Typography variant="subtitle2" gutterBottom>
-              ⚖️ LexCognito - AI-Powered Legal Research Platform
+              ⚖️ LexCognito - AI-Powered Legal Research Platform v5.0
             </Typography>
             <Typography variant="body2">
-              Powered by Legion 5 Pro • 8GB VRAM • 64GB RAM • CUDA Enabled • Local-First AI • 
-              Advanced RAG Pipeline • Companies House Integration • Native Gemini CLI
+              Powered by Simple RAG Architecture • 3-Step Process: Search → Analyze → Generate • 
+              TinyLlama (Utility) + Mistral-7B (Generation) • BGE Embeddings • FAISS Vector Search • 
+              Clear Model Separation • Document-Based Responses • Local-First AI
             </Typography>
           </Alert>
         </Grid>

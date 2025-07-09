@@ -2,15 +2,18 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import { CssBaseline, Box } from '@mui/material';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Sidebar from './components/Layout/Sidebar';
 import TopBar from './components/Layout/TopBar';
 import Dashboard from './pages/Dashboard';
-import ConsultationPage from './pages/ConsultationPage';
 import DocumentsPage from './pages/DocumentsPage';
 import CompaniesHousePage from './pages/CompaniesHousePage';
-import TerminalPage from './pages/TerminalPage';
+import LegalCitationPage from './pages/LegalCitationPage';
+import Research from './pages/Research';
+import CloudConsultation from './pages/CloudConsultation';
 import AnalyticsPage from './pages/AnalyticsPage';
 import ClaudeCliNativePage from './pages/ClaudeCliNativePage';
+import DiagnosticsPage from './pages/DiagnosticsPage';
 
 // LexCognito theme
 const theme = createTheme({
@@ -56,6 +59,16 @@ const theme = createTheme({
 
 const drawerWidth = 280;
 
+// Create a client for React Query
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 2,
+      staleTime: 5 * 60 * 1000, // 5 minutes
+    },
+  },
+});
+
 function App() {
   const [sidebarOpen, setSidebarOpen] = React.useState(true);
 
@@ -64,9 +77,10 @@ function App() {
   };
 
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <Router>
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <Router>
         <Box sx={{ display: 'flex', minHeight: '100vh' }}>
           <TopBar 
             drawerWidth={drawerWidth} 
@@ -94,17 +108,22 @@ function App() {
           >
             <Routes>
               <Route path="/" element={<Dashboard />} />
-              <Route path="/consultation" element={<ConsultationPage />} />
+              <Route path="/research" element={<Research />} />
+              <Route path="/cloud-consultation" element={<CloudConsultation />} />
               <Route path="/documents" element={<DocumentsPage />} />
               <Route path="/companies-house" element={<CompaniesHousePage />} />
-              <Route path="/terminal" element={<TerminalPage />} />
+              <Route path="/legal-citation" element={<LegalCitationPage />} />
               <Route path="/claude-cli" element={<ClaudeCliNativePage />} />
               <Route path="/analytics" element={<AnalyticsPage />} />
+              <Route path="/diagnostics" element={<DiagnosticsPage />} />
+              {/* Redirect old consultation route to new research page */}
+              <Route path="/consultation" element={<Research />} />
             </Routes>
           </Box>
         </Box>
       </Router>
     </ThemeProvider>
+    </QueryClientProvider>
   );
 }
 

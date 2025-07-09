@@ -15,12 +15,14 @@ import {
 import {
   Dashboard as DashboardIcon,
   Chat as ChatIcon,
+  Cloud as CloudIcon,
   Description as DocumentIcon,
   Business as BusinessIcon,
-  Terminal as TerminalIcon,
+  MenuBook as CitationIcon,
   Analytics as AnalyticsIcon,
   Gavel as GavelIcon,
-  Code as CodeIcon
+  Code as CodeIcon,
+  BugReport as BugReportIcon
 } from '@mui/icons-material';
 
 interface SidebarProps {
@@ -31,12 +33,14 @@ interface SidebarProps {
 
 const menuItems = [
   { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
-  { text: 'Legal Consultation', icon: <ChatIcon />, path: '/consultation' },
+  { text: 'Legal Research', icon: <ChatIcon />, path: '/research' },
+  { text: 'Cloud Consultation', icon: <CloudIcon />, path: '/cloud-consultation' },
   { text: 'Document Manager', icon: <DocumentIcon />, path: '/documents' },
   { text: 'Companies House', icon: <BusinessIcon />, path: '/companies-house' },
   { text: 'Claude Code CLI', icon: <CodeIcon />, path: '/claude-cli' },
-  { text: 'Terminal', icon: <TerminalIcon />, path: '/terminal' },
-  { text: 'Analytics', icon: <AnalyticsIcon />, path: '/analytics' }
+  { text: 'Legal Citation', icon: <CitationIcon />, path: '/legal-citation' },
+  { text: 'Analytics', icon: <AnalyticsIcon />, path: '/analytics' },
+  { text: 'Diagnostics', icon: <BugReportIcon />, path: '/diagnostics' }
 ];
 
 const Sidebar: React.FC<SidebarProps> = ({ drawerWidth, open }) => {

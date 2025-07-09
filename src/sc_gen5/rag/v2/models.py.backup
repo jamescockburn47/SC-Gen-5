@@ -1,0 +1,427 @@
+"""
+Model singletons with lazy loading for RAG v2.
+Lazy-load quantized models once per process to optimize memory usage.
+"""
+
+from functools import lru_cache
+from typing import Tuple, Any, Optional, Dict
+import logging
+from pathlib import Path
+
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM
+from sentence_transformers import SentenceTransformer
+from auto_gptq import AutoGPTQForCausalLM
+from settings import settings
+import gc
+import time
+
+# Import hardware configuration
+from .hardware import utility_device_map, reasoner_device_map, hardware_initialized
+
+log = logging.getLogger("lexcognito.rag.v2.models")
+
+class ModelManager:
+    """Manages loading and caching of models for RAG v2."""
+    
+    def __init__(self):
+        self.embedder = None
+        self.embedder_tokenizer = None
+        self.retriever_model = None  # Mistral-7B for sophisticated retrieval
+        self.retriever_tokenizer = None
+        self.reasoner_model = None   # Phi-2 for fast generation
+        self.reasoner_tokenizer = None
+        self._cache = {}
+        
+    def load_embedder(self, force_reload: bool = False) -> Tuple[Any, Any]:
+        """Load embedder model (BGE-small) on CPU."""
+        if self.embedder is not None and not force_reload:
+            return self.embedder, self.embedder_tokenizer
+        
+        log.info("Loading embedder model (BGE-small)...")
+        try:
+            self.embedder = SentenceTransformer(settings.EMBEDDING_MODEL)
+            self.embedder_tokenizer = None  # SentenceTransformer handles tokenization
+            log.info("✓ Embedder model loaded successfully")
+            return self.embedder, self.embedder_tokenizer
+        except Exception as e:
+            log.error(f"Failed to load embedder: {e}")
+            raise
+    
+    def load_retriever_model(self, force_reload: bool = False) -> Tuple[AutoTokenizer, AutoModelForCausalLM]:
+        """Load retriever model (Mistral-7B-GPTQ) on CPU for reliable generation."""
+        if self.retriever_model is not None and not force_reload:
+            if self.retriever_tokenizer is not None:
+                return self.retriever_tokenizer, self.retriever_model
+        
+        # Check cache
+        cached = self._get_cached_model('retriever')
+        if cached and not force_reload:
+            self.retriever_tokenizer = cached['tokenizer']
+            self.retriever_model = cached['model']
+            log.info("✓ Using cached retriever model from RAM")
+            return self.retriever_tokenizer, self.retriever_model
+        
+        log.info("Loading retriever model (Mistral-7B-GPTQ) on CPU...")
+        try:
+            # Load quantized Mistral-7B for sophisticated retrieval
+            model_name = settings.REASONING_MODEL  # Use the configured model
+            
+            # Load tokenizer
+            self.retriever_tokenizer = AutoTokenizer.from_pretrained(
+                model_name,
+                trust_remote_code=True,
+                use_fast=False
+            )
+            
+            # Load quantized model on CPU for reliability
+            self.retriever_model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                device_map="cpu",  # Force CPU loading for reliability
+                trust_remote_code=True,
+                torch_dtype=torch.float32,  # Use float32 for CPU
+                low_cpu_mem_usage=True
+            )
+            
+            # Test the model
+            test_input = "Test input for retriever model"
+            inputs = self.retriever_tokenizer(test_input, return_tensors="pt")
+            with torch.no_grad():
+                _ = self.retriever_model(**inputs)
+            
+            # Cache the model
+            self._cache_model('retriever', self.retriever_tokenizer, self.retriever_model)
+            
+            log.info("✓ Retriever model loaded successfully on CPU")
+            return self.retriever_tokenizer, self.retriever_model
+            
+        except Exception as e:
+            log.error(f"Failed to load retriever model: {e}")
+            raise
+    
+    def load_reasoner_model(self, force_reload: bool = False) -> Tuple[AutoTokenizer, AutoModelForCausalLM]:
+        """Load reasoner model (Phi-2) for fast generation on CPU."""
+        if self.reasoner_model is not None and not force_reload:
+            if self.reasoner_tokenizer is not None:
+                return self.reasoner_tokenizer, self.reasoner_model
+        
+        # Check cache
+        cached = self._get_cached_model('reasoner')
+        if cached and not force_reload:
+            self.reasoner_tokenizer = cached['tokenizer']
+            self.reasoner_model = cached['model']
+            log.info("✓ Using cached reasoner model from RAM")
+            return self.reasoner_tokenizer, self.reasoner_model
+        
+        log.info("Loading reasoner model (Phi-2) on CPU...")
+        try:
+            # Force CPU loading for reliability
+            model_name = settings.UTILITY_MODEL  # Use the same model for consistency
+            
+            # Load tokenizer
+            self.reasoner_tokenizer = AutoTokenizer.from_pretrained(
+                model_name,
+                trust_remote_code=True
+            )
+            
+            # Load model on CPU only
+            self.reasoner_model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                device_map="cpu",  # Force CPU loading
+                trust_remote_code=True,
+                torch_dtype=torch.float32,  # Use float32 for CPU
+                low_cpu_mem_usage=True
+            )
+            
+            # Test the model
+            test_input = "Test input for reasoner model"
+            inputs = self.reasoner_tokenizer(test_input, return_tensors="pt")
+            with torch.no_grad():
+                _ = self.reasoner_model(**inputs)
+            
+            # Cache the model
+            self._cache_model('reasoner', self.reasoner_tokenizer, self.reasoner_model)
+            
+            log.info("✓ Reasoner model loaded successfully on CPU")
+            return self.reasoner_tokenizer, self.reasoner_model
+            
+        except Exception as e:
+            log.error(f"Failed to load reasoner model: {e}")
+            raise
+    
+    def _get_cached_model(self, model_type: str) -> Optional[Dict[str, Any]]:
+        """Get cached model if available."""
+        return self._cache.get(model_type)
+    
+    def _cache_model(self, model_type: str, tokenizer: Any, model: Any) -> None:
+        """Cache model for reuse."""
+        self._cache[model_type] = {
+            'tokenizer': tokenizer,
+            'model': model,
+            'timestamp': time.time()
+        }
+    
+    def get_memory_usage(self) -> Dict[str, float]:
+        """Get memory usage for all loaded models."""
+        usage = {}
+        
+        if torch.cuda.is_available():
+            usage['gpu_vram'] = torch.cuda.memory_allocated() / 1024**3
+            usage['gpu_total'] = torch.cuda.get_device_properties(0).total_memory / 1024**3
+        
+        return usage
+    
+    def get_memory_status(self) -> Dict[str, Any]:
+        """Get detailed memory status and model loading state."""
+        status = {
+            "models_loaded": {
+                "embedder": self.embedder is not None,
+                "utility": self.retriever_model is not None,
+                "reasoning": self.reasoner_model is not None
+            },
+            "memory_usage": self.get_memory_usage()
+        }
+        return status
+    
+    def get_embedder(self) -> Tuple[Any, Any]:
+        """Get embedder model, loading if needed."""
+        return self.load_embedder()
+    
+    def get_retriever_model(self) -> Tuple[AutoTokenizer, AutoModelForCausalLM]:
+        """Get retriever model, loading if needed."""
+        return self.load_retriever_model()
+    
+    def get_reasoner_model(self) -> Tuple[AutoTokenizer, AutoModelForCausalLM]:
+        """Get reasoner model, loading if needed."""
+        return self.load_reasoner_model()
+    
+    def get_utility_model(self) -> Tuple[AutoTokenizer, AutoModelForCausalLM]:
+        """Get utility model, loading if needed."""
+        return self.load_reasoner_model()  # Use reasoner model as utility model (small, CPU)
+    
+    def get_reasoning_model(self) -> Tuple[AutoTokenizer, AutoModelForCausalLM]:
+        """Get reasoning model, loading if needed."""
+        return self.load_retriever_model()  # Use retriever model as reasoning model (large, GPU)
+    
+    def unload_all_models(self) -> None:
+        """Unload all models and clear cache."""
+        log.info("Unloading all models...")
+        
+        # Clear models
+        self.embedder = None
+        self.embedder_tokenizer = None
+        self.retriever_model = None
+        self.retriever_tokenizer = None
+        self.reasoner_model = None
+        self.reasoner_tokenizer = None
+        
+        # Clear cache
+        self._cache.clear()
+        
+        # Clear GPU cache
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        log.info("✓ All models unloaded")
+
+# Global model manager instance
+_model_manager = ModelManager()
+
+# Legacy functions for backward compatibility
+@lru_cache(maxsize=1)
+def utility_llm() -> Tuple[AutoTokenizer, AutoModelForCausalLM]:
+    """Legacy function - use model manager instead."""
+    return _model_manager.get_reasoner_model()
+
+@lru_cache(maxsize=1)
+def reasoning_llm() -> Tuple[AutoTokenizer, AutoModelForCausalLM]:
+    """Legacy function - use model manager instead."""
+    return _model_manager.get_retriever_model()
+
+@lru_cache(maxsize=1)
+def retriever_llm() -> Tuple[AutoTokenizer, AutoModelForCausalLM]:
+    """Legacy function - use model manager instead."""
+    return _model_manager.get_retriever_model()
+
+@lru_cache(maxsize=1)
+def reasoner_llm() -> Tuple[AutoTokenizer, AutoModelForCausalLM]:
+    """Legacy function - use model manager instead."""
+    return _model_manager.get_reasoner_model()
+
+@lru_cache(maxsize=1)
+def embedder() -> Tuple[Any, Any]:
+    """Legacy function - use model manager instead."""
+    return _model_manager.get_embedder()
+
+def get_model_info() -> dict:
+    """Get information about loaded models and memory usage."""
+    return _model_manager.get_memory_usage()
+
+def unload_models():
+    """Unload all models and clear cache."""
+    _model_manager.unload_all_models()
+
+def load_models_progressively() -> dict:
+    """
+    Progressive model loading optimized for Legion 5 Pro 8GB GPU.
+    Loads only the embedder (CPU) and utility model (GPU) at startup.
+    Returns loading status and memory usage.
+    """
+    log.info("Starting progressive model loading (embedder + utility only)...")
+    
+    status = {
+        "embedder": False,
+        "utility": False, 
+        "reasoning": False,  # Will always be False at startup
+        "memory_usage": {},
+        "errors": []
+    }
+    
+    try:
+        # Step 1: Load embedder (CPU, always safe)
+        log.info("Step 1: Loading embedder (CPU)...")
+        _ = _model_manager.get_embedder()
+        status["embedder"] = True
+        log.info("✓ Embedder loaded successfully")
+        
+        # Step 2: Load utility model (smaller for chunk relevance)
+        log.info("Step 2: Loading utility model (Phi-2)...")
+        utility_tok, utility_model = _model_manager.get_utility_model()
+        
+        # Test utility model with minimal inference (CPU only)
+        test_input = utility_tok("Test", return_tensors="pt", max_length=10)
+        # Keep all tensors on CPU since utility model is loaded on CPU
+        test_input = {k: v.to("cpu") for k, v in test_input.items()}
+        
+        with torch.no_grad():
+            _ = utility_model.generate(
+                **test_input,
+                max_new_tokens=1,
+                do_sample=False,
+                pad_token_id=utility_tok.eos_token_id
+            )
+        
+        status["utility"] = True
+        log.info("✓ Utility model loaded and tested successfully")
+        
+        # Check memory usage
+        memory_info = _model_manager.get_memory_usage()
+        status["memory_usage"] = memory_info
+        gpu_allocated = memory_info.get("gpu_vram", 0)
+        log.info(f"GPU memory after utility model: {gpu_allocated:.1f}GB")
+        
+        # Step 3: Do NOT load reasoning model at startup
+        log.info("Skipping reasoning model loading at startup. It will be loaded lazily on first use.")
+        status["reasoning"] = False
+        
+        log.info("✓ Progressive model loading (embedder + utility only) completed successfully")
+        return status
+        
+    except Exception as e:
+        error_msg = f"Progressive model loading failed: {e}"
+        log.error(error_msg)
+        status["errors"].append(error_msg)
+        
+        # Clear GPU cache on error
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        return status
+
+def warmup_models():
+    """Pre-load embedder and utility models to avoid first-call latency."""
+    log.info("Warming up models (embedder + utility only)...")
+    
+    try:
+        # Load embedder first (CPU)
+        _ = _model_manager.get_embedder()
+        log.info("✓ Embedder warmed up successfully")
+        
+        # Load utility model only
+        utility_tok, utility_model = _model_manager.get_utility_model()
+        
+        # Test utility model with short prompt (CPU only)
+        test_input = utility_tok("Test", return_tensors="pt")
+        # Keep all tensors on CPU since utility model is loaded on CPU
+        test_input = {k: v.to("cpu") for k, v in test_input.items()}
+        
+        with torch.no_grad():
+            _ = utility_model.generate(
+                **test_input,
+                max_new_tokens=1,
+                do_sample=False,
+                pad_token_id=utility_tok.eos_token_id
+            )
+        
+        log.info("✓ Utility model warmed up successfully")
+        
+        # Do NOT load reasoning model during warmup
+        log.info("Skipping reasoning model warmup - will be loaded on first use")
+        
+        log.info("Model warmup completed successfully (embedder + utility only)")
+        return True
+        
+    except Exception as e:
+        log.error(f"Model warmup failed: {e}")
+        return False
+
+# Model loading verification
+def verify_models():
+    """Verify that all models can be loaded successfully."""
+    results = {
+        "utility": False,
+        "reasoning": False,
+        "embedder": False,
+        "errors": []
+    }
+    
+    try:
+        _ = _model_manager.get_embedder()
+        results["embedder"] = True
+        log.info("✓ Embedder model verification passed")
+    except Exception as e:
+        results["errors"].append(f"Embedder: {e}")
+        log.error(f"✗ Embedder model verification failed: {e}")
+    
+    try:
+        _ = _model_manager.get_utility_model()
+        results["utility"] = True
+        log.info("✓ Utility model verification passed")
+    except Exception as e:
+        results["errors"].append(f"Utility: {e}")
+        log.error(f"✗ Utility model verification failed: {e}")
+    
+    try:
+        _ = _model_manager.get_reasoning_model()
+        results["reasoning"] = True
+        log.info("✓ Reasoning model verification passed")
+    except Exception as e:
+        results["errors"].append(f"Reasoning: {e}")
+        log.error(f"✗ Reasoning model verification failed: {e}")
+    
+    return results
+
+
+
+def get_loading_status() -> dict:
+    """Get detailed model loading status and recommendations."""
+    status = _model_manager.get_memory_status()
+    from .hardware import get_memory_info
+    memory_info = get_memory_info()
+    
+    # Add loading recommendations
+    recommendations = []
+    
+    if not status["models_loaded"]["utility"]:
+        recommendations.append("Load utility model for basic operations")
+    
+    if not status["models_loaded"]["reasoning"] and memory_info.get("gpu_allocated_gb", 0) < 6.0:
+        recommendations.append("Load reasoning model for complex analysis")
+    
+    if memory_info.get("gpu_allocated_gb", 0) > 7.0:
+        recommendations.append("High GPU memory usage - consider unloading unused models")
+    
+    status["recommendations"] = recommendations
+    status["memory_info"] = memory_info
+    
+    return status

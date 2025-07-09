@@ -1,17 +1,18 @@
 """FastAPI backend for React frontend integration."""
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, Body
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from typing import List, Dict, Any, Optional
 import logging
 import os
+import psutil
+import shutil
 from pathlib import Path
 from dotenv import load_dotenv
 
 # Import core components
 from ..core.doc_store import DocStore
-from ..core.rag_pipeline import RAGPipeline
 from ..integrations.companies_house import CompaniesHouseClient
 
 # Load environment variables
@@ -22,9 +23,8 @@ load_dotenv(env_path)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Global instances
+# Global instances - these will be initialized by the main app
 doc_store: Optional[DocStore] = None
-rag_pipeline: Optional[RAGPipeline] = None
 companies_house_client = None
 
 # Initialize FastAPI app
@@ -46,137 +46,133 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on startup."""
-    global doc_store, rag_pipeline, companies_house_client
+    global doc_store, companies_house_client
     
     try:
-        logger.info("Initializing SC Gen 5 API services...")
-        
-        # Initialize document store
-        data_dir = os.getenv("SC_DATA_DIR", "./data")
-        vector_db_path = os.getenv("SC_VECTOR_DB_PATH", "./data/vector_db")
-        metadata_path = os.getenv("SC_METADATA_PATH", "./data/metadata.json")
-        chunk_size = int(os.getenv("SC_CHUNK_SIZE", "400"))
-        chunk_overlap = int(os.getenv("SC_CHUNK_OVERLAP", "80"))
-        embedding_model = os.getenv("SC_EMBEDDING_MODEL", "BAAI/bge-base-en-v1.5")
-        
-        doc_store = DocStore(
-            data_dir=data_dir,
-            vector_db_path=vector_db_path,
-            metadata_path=metadata_path,
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            embedding_model=embedding_model,
-        )
-        logger.info("Document store initialized")
-        
-        # Initialize RAG pipeline
-        retrieval_k = int(os.getenv("SC_RETRIEVAL_K", "50"))
-        rerank_top_k = int(os.getenv("SC_RERANK_TOP_K", "25"))
-        use_reranker = os.getenv("SC_USE_RERANKER", "false").lower() == "true"
-        
-        rag_pipeline = RAGPipeline(
-            doc_store=doc_store,
-            retrieval_k=retrieval_k,
-            rerank_top_k=rerank_top_k,
-            use_reranker=use_reranker,
-        )
-        logger.info("RAG pipeline initialized")
-        
-        # Initialize Companies House client
-        api_key = os.getenv("COMPANIES_HOUSE_API_KEY")
-        if api_key:
-            companies_house_client = CompaniesHouseClient(api_key)
-            logger.info("Companies House client initialized")
-        
+        # Try to get global instances from main app
+        try:
+            import sys
+            import os
+            # Add the project root to the path
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+            sys.path.insert(0, project_root)
+            
+            from app import get_doc_store, get_companies_house_client
+            
+            doc_store = get_doc_store()
+            companies_house_client = get_companies_house_client()
+            
+            if doc_store is not None and companies_house_client is not None:
+                logger.info("Using global instances from main app")
+            else:
+                raise ImportError("Global instances not available")
+            
+        except (ImportError, Exception) as e:
+            logger.warning(f"Could not import global instances: {e}, initializing locally")
+            
+            # Initialize document store
+            doc_store = DocStore()
+            logger.info("Document store initialized")
+            
+            # Initialize Companies House client
+            try:
+                companies_house_client = CompaniesHouseClient()
+                logger.info("Companies House client initialized")
+            except Exception as e:
+                logger.warning(f"Companies House client failed to initialize: {e}")
+                companies_house_client = None
+                
         logger.info("All services initialized successfully")
         
     except Exception as e:
         logger.error(f"Failed to initialize services: {e}")
         raise
 
-# Health check endpoint
 @app.get("/")
 async def root():
-    """Health check endpoint."""
-    return {"message": "LexCognito API is running", "status": "healthy"}
+    """Root endpoint."""
+    return {
+        "message": "LexCognito API is running",
+        "version": "1.0.0",
+        "status": "healthy",
+        "rag_v2_available": False,
+        "legacy_rag_available": True
+    }
 
 # Document management endpoints
-@app.get("/api/documents")
-async def list_documents():
-    """List all documents."""
+@app.get("/documents")
+async def list_documents(request: Request):
+    """List all documents in the store."""
+    doc_store = request.app.state.doc_store
     if not doc_store:
         raise HTTPException(status_code=500, detail="Document store not initialized")
     
     try:
         documents = doc_store.list_documents()
-        return {"documents": documents, "total": len(documents)}
+        return {"documents": documents}
     except Exception as e:
         logger.error(f"Failed to list documents: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/documents/stats")
-async def get_document_stats():
-    """Get document statistics."""
+@app.get("/documents/stats")
+async def get_document_stats(request: Request):
+    """Get document store statistics."""
+    doc_store = request.app.state.doc_store
     if not doc_store:
         raise HTTPException(status_code=500, detail="Document store not initialized")
     
     try:
         stats = doc_store.get_stats()
-        return {"total_documents": stats.get("total_documents", 0)}
+        return stats
     except Exception as e:
         logger.error(f"Failed to get document stats: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/documents/upload")
+@app.post("/documents/upload")
 async def upload_document(file: UploadFile = File(...)):
-    """Upload a document."""
+    """Upload and process a document."""
     if not doc_store:
         raise HTTPException(status_code=500, detail="Document store not initialized")
     
     try:
-        # Validate file type
-        allowed_types = [".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".gif"]
-        file_extension = Path(file.filename).suffix.lower()
-        
-        if file_extension not in allowed_types:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Unsupported file type: {file_extension}. Allowed: {allowed_types}"
-            )
-        
-        # Read file content
-        file_content = await file.read()
+        # Save uploaded file temporarily
+        temp_path = Path(f"/tmp/{file.filename}")
+        with open(temp_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
         
         # Add document to store
-        doc_id = doc_store.add_document(file_content, file.filename)
-        document = doc_store.get_document(doc_id)
+        doc_id = doc_store.add_document(temp_path, file.filename)
         
-        return document
+        # Clean up temp file
+        temp_path.unlink()
         
-    except HTTPException:
-        raise
+        return {
+            "message": "Document uploaded successfully",
+            "doc_id": doc_id,
+            "filename": file.filename
+        }
     except Exception as e:
         logger.error(f"Failed to upload document: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/documents/{doc_id}")
+@app.get("/documents/{doc_id}")
 async def get_document(doc_id: str):
-    """Get document by ID."""
+    """Get document metadata."""
     if not doc_store:
         raise HTTPException(status_code=500, detail="Document store not initialized")
     
     try:
-        document = doc_store.get_document(doc_id)
-        if not document:
+        doc = doc_store.get_document(doc_id)
+        if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
-        return document
+        return doc
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to get document: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/documents/{doc_id}/text")
+@app.get("/documents/{doc_id}/text")
 async def get_document_text(doc_id: str):
     """Get document text content."""
     if not doc_store:
@@ -184,50 +180,58 @@ async def get_document_text(doc_id: str):
     
     try:
         text = doc_store.get_document_text(doc_id)
-        return {"doc_id": doc_id, "text": text}
+        if text is None:
+            raise HTTPException(status_code=404, detail="Document not found")
+        return {"text": text}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to get document text: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/documents/{doc_id}/download")
+@app.get("/documents/{doc_id}/download")
 async def download_document(doc_id: str):
     """Download document file."""
     if not doc_store:
         raise HTTPException(status_code=500, detail="Document store not initialized")
     
     try:
-        file_bytes, filename = doc_store.get_document_file(doc_id)
-        from fastapi.responses import Response
-        return Response(
-            content=file_bytes,
-            media_type="application/octet-stream",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
-        )
+        doc = doc_store.get_document(doc_id)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        file_path = doc.get("file_path")
+        if not file_path or not Path(file_path).exists():
+            raise HTTPException(status_code=404, detail="Document file not found")
+        
+        return FileResponse(file_path, filename=doc.get("filename", "document"))
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to download document: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/documents/{doc_id}/reprocess")
+@app.post("/documents/{doc_id}/reprocess")
 async def reprocess_document(doc_id: str):
-    """Reprocess document."""
+    """Reprocess a document."""
     if not doc_store:
         raise HTTPException(status_code=500, detail="Document store not initialized")
     
     try:
-        # Get the original file
-        file_bytes, filename = doc_store.get_document_file(doc_id)
-        # Re-add the document with force_ocr=True
-        doc_store.delete_document(doc_id)
-        new_doc_id = doc_store.add_document(file_bytes, filename, metadata={"force_ocr": True})
-        document = doc_store.get_document(new_doc_id)
-        return {"document": document}
+        success = doc_store.reprocess_document(doc_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        return {"message": "Document reprocessed successfully"}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to reprocess document: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.delete("/api/documents/{doc_id}")
+@app.delete("/documents/{doc_id}")
 async def delete_document(doc_id: str):
-    """Delete document."""
+    """Delete a document."""
     if not doc_store:
         raise HTTPException(status_code=500, detail="Document store not initialized")
     
@@ -235,6 +239,7 @@ async def delete_document(doc_id: str):
         success = doc_store.delete_document(doc_id)
         if not success:
             raise HTTPException(status_code=404, detail="Document not found")
+        
         return {"message": "Document deleted successfully"}
     except HTTPException:
         raise
@@ -243,118 +248,30 @@ async def delete_document(doc_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 # Consultation endpoints
-@app.post("/api/consultations/cloud-query")
-async def cloud_only_query(request: dict):
-    """Process a consultation query using cloud LLMs only (no RAG)."""
-    try:
-        query = request.get("query")
-        if not query:
-            raise HTTPException(status_code=400, detail="Query is required")
-        
-        cloud_provider = request.get("cloud_provider", "anthropic")
-        model_choice = request.get("model_choice")
-        
-        # Import cloud LLM directly
-        from ..core.cloud_llm import CloudLLMGenerator, CloudProvider
-        cloud_llm = CloudLLMGenerator()
-        
-        # Map provider string to enum
-        provider_map = {
-            "openai": CloudProvider.OPENAI,
-            "gemini": CloudProvider.GEMINI,
-            "claude": CloudProvider.CLAUDE,
-            "anthropic": CloudProvider.CLAUDE  # Alias for Claude
+@app.post("/consultations/cloud-query")
+async def cloud_only_query_redirect(request: dict):
+    """DEPRECATED: This endpoint has been replaced with unified RAG. Redirects to /api/rag/answer."""
+    raise HTTPException(
+        status_code=410, 
+        detail={
+            "error": "Endpoint deprecated", 
+            "message": "This endpoint bypassed document retrieval and provided generic responses. Please use the unified RAG endpoint instead.",
+            "redirect_to": "/api/rag/answer",
+            "new_format": {
+                "question": "Your legal question here",
+                "include_sources": True,
+                "response_style": "detailed"
+            }
         }
-        
-        provider_enum = provider_map.get(cloud_provider)
-        if not provider_enum:
-            raise HTTPException(status_code=400, detail=f"Unsupported provider: {cloud_provider}")
-        
-        # Generate direct answer without RAG
-        try:
-            answer = cloud_llm.generate(
-                prompt=f"You are a legal assistant. Please provide a professional legal analysis for the following question:\n\n{query}",
-                provider=provider_enum,
-                model=model_choice,
-                max_tokens=2000,
-                temperature=0.1
-            )
-            model_used = f"{cloud_provider}:{model_choice or 'default'}"
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Cloud LLM failed: {str(e)}")
-        
-        return {
-            "response": answer,
-            "sources": [],  # Empty array for cloud-only queries
-            "model_used": model_used,
-            "confidence": 1.0,
-            "timestamp": "2024-01-01T00:00:00Z",
-            "query_type": "cloud_only"
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to process cloud-only query: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    )
 
-@app.post("/api/consultations/query")
-async def query_consultation(request: dict):
-    """Process a legal consultation query."""
-    if not rag_pipeline:
-        raise HTTPException(status_code=500, detail="RAG pipeline not initialized")
-    
-    try:
-        query = request.get("query")
-        if not query:
-            raise HTTPException(status_code=400, detail="Query is required")
-        
-        # Get additional parameters
-        session_id = request.get("session_id")
-        settings = request.get("settings", {})
-        context_documents = request.get("context_documents", 5)
-        
-        # Map frontend model preferences to actual model names
-        model_preference = settings.get("model_preference", "mistral:latest")  # Default to quality model
-        if model_preference == "auto":
-            model_choice = "mistral:latest"  # Use quality default
-        elif model_preference == "local":
-            model_choice = "mistral:latest"  # Use quality local model
-        elif model_preference == "cloud":
-            model_choice = None  # Cloud models handled differently
-            settings["cloud_allowed"] = True
-        else:
-            model_choice = model_preference  # Use exact model name
-        
-        # Process the query through RAG pipeline
-        result = rag_pipeline.answer(
-            question=query,
-            cloud_allowed=settings.get("cloud_allowed", False),
-            cloud_provider=settings.get("cloud_provider", "anthropic"),
-            model_choice=model_choice,
-            matter_type=settings.get("legal_area"),
-            matter_id=session_id or "default",
-        )
-        
-        return {
-            "response": result.get("answer", "No response generated"),
-            "sources": result.get("sources", []),
-            "model_used": result.get("model_used", "unknown"),
-            "confidence": result.get("confidence", 0.0),
-            "timestamp": "2024-01-01T00:00:00Z",
-            "retrieved_chunks": result.get("retrieved_chunks", 0),
-            "documents_used": 1 if result.get("retrieved_chunks", 0) > 0 else 0  # Always 1 doc currently
-        }
-    except Exception as e:
-        logger.error(f"Failed to process consultation query: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/consultations/sessions")
+@app.get("/consultations/sessions")
 async def get_consultation_sessions():
     """Get consultation sessions."""
     # TODO: Implement session storage
     return {"sessions": []}
 
-@app.post("/api/consultations/sessions")
+@app.post("/consultations/sessions")
 async def create_consultation_session(request: dict):
     """Create a new consultation session."""
     # TODO: Implement session creation
@@ -369,58 +286,110 @@ async def create_consultation_session(request: dict):
         }
     }
 
-@app.get("/api/consultations/sessions/{session_id}/messages")
+@app.get("/consultations/sessions/{session_id}/messages")
 async def get_session_messages(session_id: str):
     """Get messages for a session."""
     # TODO: Implement message storage
     return {"messages": []}
 
-@app.post("/api/consultations/sessions/save")
+@app.post("/consultations/sessions/save")
 async def save_consultation_session(request: dict):
     """Save a consultation session."""
     # TODO: Implement session saving
     return {"message": "Session saved successfully"}
 
 # Companies House endpoints
-@app.get("/api/companies-house/status")
-async def get_companies_house_status():
+@app.get("/companies-house/status")
+async def get_companies_house_status(request: Request):
     """Get Companies House API status."""
-    return {"available": companies_house_client is not None}
+    ch_client = getattr(request.app.state, "companies_house_client", None)
+    status = {"available": ch_client is not None}
+    logger.info(f"Companies House status: {status}")
+    return status
 
-@app.get("/api/companies-house/bulk-jobs")
+@app.get("/companies-house/bulk-jobs")
 async def get_bulk_jobs():
     """Get bulk processing jobs status."""
     # TODO: Implement bulk job tracking
     return {"jobs": [], "total": 0}
 
-@app.get("/api/companies-house/search")
-async def search_companies(query: str, type: str = "company", limit: int = 10):
+@app.get("/companies-house/search")
+async def search_companies(request: Request, query: str, type: str = "company", limit: int = 10):
     """Search companies using Companies House API."""
-    if not companies_house_client:
+    ch_client = getattr(request.app.state, "companies_house_client", None)
+    if not ch_client:
         return {"companies": [], "query": query, "total": 0}
-    
     try:
-        results = companies_house_client.search_companies(query, limit=limit)
-        return {"companies": results, "query": query, "total": len(results)}
+        results = ch_client.search_companies(query, items_per_page=limit)
+        return {"companies": results, "query": query, "total": len(results.get('items', []))}
     except Exception as e:
         logger.error(f"Failed to search companies: {e}")
         return {"companies": [], "query": query, "total": 0}
 
-@app.get("/api/companies-house/company/{company_number}")
-async def get_company_details(company_number: str):
+@app.get("/companies-house/company/{company_number}")
+async def get_company_details(request: Request, company_number: str):
     """Get detailed company information."""
-    if not companies_house_client:
+    ch_client = getattr(request.app.state, "companies_house_client", None)
+    if not ch_client:
         raise HTTPException(status_code=500, detail="Companies House client not initialized")
-    
     try:
-        company = companies_house_client.get_company(company_number)
+        company = ch_client.get_company_profile(company_number)
         return company
     except Exception as e:
         logger.error(f"Failed to get company details: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/companies-house/company/{company_number}/filing/{transaction_id}/download")
+async def download_and_store_filing(request: Request, company_number: str, transaction_id: str, category: str = "Uncategorised"):
+    """Download a filing document and store it in the DMS with category support."""
+    ch_client = getattr(request.app.state, "companies_house_client", None)
+    doc_store = getattr(request.app.state, "doc_store", None)
+    if not ch_client or not doc_store:
+        raise HTTPException(status_code=500, detail="Required service not initialized")
+    try:
+        # Download document
+        content = ch_client.get_filing_document(company_number, transaction_id)
+        if not isinstance(content, bytes):
+            raise ValueError("Downloaded document is not bytes")
+        # Store in DMS
+        filename = f"{company_number}_{transaction_id}.pdf"
+        doc_id = doc_store.add_document(content, filename, metadata={"source": "companies_house", "company_number": company_number, "transaction_id": transaction_id, "category": category})
+        return {"message": "Document stored in DMS", "doc_id": doc_id, "category": category}
+    except Exception as e:
+        logger.error(f"Failed to download/store filing: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/companies-house/document/{doc_id}/categorise")
+async def categorise_document(request: Request, doc_id: str, category: str = Body(...)):
+    """Update the category of a Companies House document in the DMS."""
+    doc_store = getattr(request.app.state, "doc_store", None)
+    if not doc_store:
+        raise HTTPException(status_code=500, detail="Document store not initialized")
+    try:
+        doc_store.update_metadata(doc_id, {"category": category})
+        return {"message": "Category updated", "doc_id": doc_id, "category": category}
+    except Exception as e:
+        logger.error(f"Failed to update document category: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/companies-house/documents/by-category")
+async def list_documents_by_category(request: Request, category: str = None):
+    """List all Companies House documents, optionally filtered by category."""
+    doc_store = getattr(request.app.state, "doc_store", None)
+    if not doc_store:
+        raise HTTPException(status_code=500, detail="Document store not initialized")
+    try:
+        docs = doc_store.list_documents()
+        ch_docs = [d for d in docs if d.get("source") == "companies_house"]
+        if category:
+            ch_docs = [d for d in ch_docs if d.get("category") == category]
+        return {"documents": ch_docs, "category": category}
+    except Exception as e:
+        logger.error(f"Failed to list Companies House documents: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Analytics endpoints
-@app.get("/api/analytics/documents")
+@app.get("/analytics/documents")
 async def get_document_analytics():
     """Get document analytics."""
     if not doc_store:
@@ -439,7 +408,7 @@ async def get_document_analytics():
         logger.error(f"Failed to get analytics: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/analytics/usage")
+@app.get("/analytics/usage")
 async def get_usage_analytics():
     """Get usage analytics."""
     # TODO: Implement usage tracking
@@ -456,13 +425,19 @@ import asyncio
 import json
 import signal
 import uuid
+import pty
+import os
+import fcntl
+import termios
+import select
+import struct
 from typing import Dict, Any
 from fastapi import WebSocket, WebSocketDisconnect
 
 # Store active Claude CLI sessions
 claude_sessions: Dict[str, Dict[str, Any]] = {}
 
-@app.get("/api/claude-cli/status")
+@app.get("/claude-cli/status")
 async def get_claude_cli_status():
     """Check Claude CLI availability and configuration."""
     try:
@@ -484,70 +459,35 @@ async def get_claude_cli_status():
 
 @app.websocket("/ws/claude-cli/{session_id}")
 async def claude_cli_websocket(websocket: WebSocket, session_id: str):
-    """Native Claude CLI WebSocket interface for real-time interaction."""
-    await websocket.accept()
+    """Clean Claude CLI WebSocket interface for real-time interaction."""
+    logger.info(f"WebSocket connection attempt for session {session_id}")
     
     try:
-        # Initialize Claude CLI session
-        claude_process = await asyncio.create_subprocess_exec(
-            "claude",
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=os.getcwd()
-        )
+        await websocket.accept()
+        logger.info(f"WebSocket accepted for session {session_id}")
         
-        claude_sessions[session_id] = {
-            "process": claude_process,
-            "websocket": websocket,
-            "active": True
-        }
-        
-        # Start reading Claude CLI output
-        async def read_claude_output():
-            try:
-                while claude_sessions.get(session_id, {}).get("active", False):
-                    if claude_process.stdout:
-                        line = await claude_process.stdout.readline()
-                        if line:
-                            await websocket.send_text(json.dumps({
-                                "type": "output",
-                                "content": line.decode().rstrip()
-                            }))
-                        else:
-                            break
-            except Exception as e:
-                await websocket.send_text(json.dumps({
-                    "type": "error",
-                    "content": f"Output stream error: {str(e)}"
-                }))
-        
-        # Start reading Claude CLI errors
-        async def read_claude_errors():
-            try:
-                while claude_sessions.get(session_id, {}).get("active", False):
-                    if claude_process.stderr:
-                        line = await claude_process.stderr.readline()
-                        if line:
-                            await websocket.send_text(json.dumps({
-                                "type": "error",
-                                "content": line.decode().rstrip()
-                            }))
-            except Exception as e:
-                await websocket.send_text(json.dumps({
-                    "type": "error", 
-                    "content": f"Error stream error: {str(e)}"
-                }))
-        
-        # Start output readers
-        output_task = asyncio.create_task(read_claude_output())
-        error_task = asyncio.create_task(read_claude_errors())
-        
-        # Send initial connection message
+        # Send immediate confirmation
         await websocket.send_text(json.dumps({
             "type": "connected",
             "content": f"Connected to Claude CLI session {session_id}",
-            "working_directory": os.getcwd()
+            "working_directory": "/home/jcockburn/SC Gen 5"
+        }))
+        
+        # Set up environment
+        working_dir = "/home/jcockburn/SC Gen 5"
+        logger.info(f"Claude CLI ready in directory: {working_dir}")
+        
+        claude_sessions[session_id] = {
+            "websocket": websocket,
+            "active": True,
+            "created_at": asyncio.get_event_loop().time(),
+            "working_dir": working_dir
+        }
+        
+        # Send clean startup message
+        await websocket.send_text(json.dumps({
+            "type": "output",
+            "content": "Claude CLI ready! Type your message and press Enter."
         }))
         
         # Handle incoming messages from frontend
@@ -557,16 +497,60 @@ async def claude_cli_websocket(websocket: WebSocket, session_id: str):
                 message = json.loads(data)
                 
                 if message.get("type") == "input":
-                    # Send input to Claude CLI
-                    if claude_process.stdin:
-                        input_text = message.get("content", "") + "\n"
-                        claude_process.stdin.write(input_text.encode())
-                        await claude_process.stdin.drain()
+                    # Handle input by calling Claude CLI with --print
+                    input_text = message.get("content", "")
+                    logger.info(f"Processing Claude CLI input: {input_text}")
+                    
+                    # Echo the input back to user
+                    await websocket.send_text(json.dumps({
+                        "type": "input_echo",
+                        "content": f"> {input_text}"
+                    }))
+                    
+                    try:
+                        # Call Claude CLI with --print for clean output
+                        process = await asyncio.create_subprocess_exec(
+                            "claude",
+                            "--print",
+                            input_text,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE,
+                            cwd=working_dir
+                        )
+                        
+                        # Get the response
+                        stdout, stderr = await process.communicate()
+                        
+                        if stdout:
+                            response_text = stdout.decode().strip()
+                            if response_text:
+                                logger.info(f"Claude CLI response length: {len(response_text)}")
+                                await websocket.send_text(json.dumps({
+                                    "type": "output",
+                                    "content": response_text
+                                }))
+                        
+                        if stderr:
+                            error_text = stderr.decode().strip()
+                            if error_text:
+                                logger.error(f"Claude CLI error: {error_text}")
+                                await websocket.send_text(json.dumps({
+                                    "type": "error",
+                                    "content": f"Error: {error_text}"
+                                }))
+                                
+                    except Exception as e:
+                        logger.error(f"Error calling Claude CLI: {str(e)}")
+                        await websocket.send_text(json.dumps({
+                            "type": "error",
+                            "content": f"Error processing request: {str(e)}"
+                        }))
                         
                 elif message.get("type") == "interrupt":
-                    # Send Ctrl+C to Claude CLI
-                    if claude_process:
-                        claude_process.send_signal(signal.SIGINT)
+                    await websocket.send_text(json.dumps({
+                        "type": "output",
+                        "content": "Interrupt signal received"
+                    }))
                         
                 elif message.get("type") == "close":
                     break
@@ -574,31 +558,31 @@ async def claude_cli_websocket(websocket: WebSocket, session_id: str):
             except WebSocketDisconnect:
                 break
             except Exception as e:
+                logger.error(f"Message handling error: {str(e)}")
                 await websocket.send_text(json.dumps({
                     "type": "error",
                     "content": f"Message handling error: {str(e)}"
                 }))
         
     except Exception as e:
-        await websocket.send_text(json.dumps({
-            "type": "error",
-            "content": f"Session initialization error: {str(e)}"
-        }))
+        logger.error(f"Claude CLI WebSocket error: {str(e)}")
+        try:
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "content": f"Session error: {str(e)}"
+            }))
+        except:
+            pass
     
     finally:
         # Clean up session
         if session_id in claude_sessions:
             session = claude_sessions[session_id]
             session["active"] = False
-            if "process" in session:
-                try:
-                    session["process"].terminate()
-                    await session["process"].wait()
-                except:
-                    pass
             del claude_sessions[session_id]
+            logger.info(f"Cleaned up session {session_id}")
 
-@app.post("/api/claude-cli/sessions")
+@app.post("/claude-cli/sessions")
 async def create_claude_session():
     """Create a new Claude CLI session."""
     session_id = str(uuid.uuid4())
@@ -608,7 +592,7 @@ async def create_claude_session():
         "status": "created"
     }
 
-@app.get("/api/claude-cli/sessions")
+@app.get("/claude-cli/sessions")
 async def list_claude_sessions():
     """List active Claude CLI sessions."""
     return {
@@ -622,7 +606,7 @@ async def list_claude_sessions():
         ]
     }
 
-@app.delete("/api/claude-cli/sessions/{session_id}")
+@app.delete("/claude-cli/sessions/{session_id}")
 async def terminate_claude_session(session_id: str):
     """Terminate a Claude CLI session."""
     if session_id in claude_sessions:
@@ -639,7 +623,7 @@ async def terminate_claude_session(session_id: str):
         raise HTTPException(status_code=404, detail="Session not found")
 
 # Dashboard endpoints
-@app.get("/api/dashboard/stats")
+@app.get("/dashboard/stats")
 async def get_dashboard_stats():
     """Get dashboard statistics."""
     try:
@@ -662,6 +646,62 @@ async def get_dashboard_stats():
     except Exception as e:
         logger.error(f"Failed to get dashboard stats: {e}")
         return {"documents": 0, "companies": 0, "queries": 0, "avgResponseTime": "0s"}
+
+@app.get("/system/stats")
+async def get_system_stats():
+    """Get real-time system statistics."""
+    try:
+        # Get CPU info
+        cpu_percent = psutil.cpu_percent(interval=1)
+        cpu_count = psutil.cpu_count()
+        
+        # Get memory info
+        memory = psutil.virtual_memory()
+        
+        # Get disk usage
+        disk = psutil.disk_usage('/')
+        
+        # Try to get GPU info (if available)
+        gpu_info = {"usage": 0, "memory": "N/A"}
+        try:
+            import GPUtil
+            gpus = GPUtil.getGPUs()
+            if gpus:
+                gpu = gpus[0]
+                gpu_info = {
+                    "usage": round(gpu.load * 100, 1),
+                    "memory": f"{gpu.memoryUsed}MB / {gpu.memoryTotal}MB"
+                }
+        except ImportError:
+            # GPU monitoring not available
+            pass
+        except Exception:
+            # GPU access error
+            pass
+        
+        return {
+            "cpu": {
+                "usage": round(cpu_percent, 1),
+                "cores": cpu_count
+            },
+            "ram": {
+                "usage": round(memory.percent, 1),
+                "memory": f"{round(memory.used / (1024**3), 1)}GB / {round(memory.total / (1024**3), 1)}GB"
+            },
+            "storage": {
+                "usage": round((disk.used / disk.total) * 100, 1),
+                "space": f"{round(disk.used / (1024**3), 1)}GB / {round(disk.total / (1024**3), 1)}GB"
+            },
+            "gpu": gpu_info
+        }
+    except Exception as e:
+        logger.error(f"Failed to get system stats: {e}")
+        return {
+            "cpu": {"usage": 0, "cores": 0},
+            "ram": {"usage": 0, "memory": "N/A"},
+            "storage": {"usage": 0, "space": "N/A"},
+            "gpu": {"usage": 0, "memory": "N/A"}
+        }
 
 # Error handlers
 @app.exception_handler(Exception)

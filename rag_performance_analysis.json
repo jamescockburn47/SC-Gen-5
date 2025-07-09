@@ -1,0 +1,61 @@
+{
+  "system_info": {
+    "cpu_count": 24,
+    "total_ram": 31.21106719970703,
+    "available_ram": 13.89834976196289,
+    "gpu_available": true,
+    "gpu_memory": 7.99560546875,
+    "current_memory": {
+      "gpu_gb": 0.0,
+      "cpu_gb": 17.139793395996094,
+      "cpu_percent": 56.6
+    }
+  },
+  "model_recommendations": {
+    "Phi-2 (2.7B)": {
+      "gpu_feasible": true,
+      "cpu_fp32_feasible": true,
+      "cpu_int8_feasible": true,
+      "best_option": "GPU"
+    },
+    "Mistral-7B-GPTQ": {
+      "gpu_feasible": false,
+      "cpu_fp32_feasible": false,
+      "cpu_int8_feasible": true,
+      "best_option": "CPU_INT8"
+    },
+    "TinyLlama-1.1B": {
+      "gpu_feasible": true,
+      "cpu_fp32_feasible": true,
+      "cpu_int8_feasible": true,
+      "best_option": "GPU"
+    }
+  },
+  "workflow_analysis": {
+    "embedding_generation": {
+      "device": "GPU",
+      "memory_impact": "Low",
+      "speed_requirement": "High",
+      "description": "Generate embeddings for documents"
+    },
+    "vector_search": {
+      "device": "CPU",
+      "memory_impact": "Low",
+      "speed_requirement": "Medium",
+      "description": "Search for relevant chunks"
+    },
+    "chunk_relevance_scoring": {
+      "device": "CPU",
+      "memory_impact": "Low",
+      "speed_requirement": "Low",
+      "description": "Score chunk relevance"
+    },
+    "answer_generation": {
+      "device": "GPU",
+      "memory_impact": "High",
+      "speed_requirement": "High",
+      "description": "Generate final answer"
+    }
+  },
+  "timestamp": 1751883003.875231
+}

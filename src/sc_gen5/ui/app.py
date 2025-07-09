@@ -19,7 +19,7 @@ env_path = Path(__file__).parent.parent.parent.parent / ".env"
 load_dotenv(env_path)
 
 from ..core.doc_store import DocStore
-from ..core.rag_pipeline import RAGPipeline
+from ..rag.v1.rag_pipeline import RAGPipeline
 from ..integrations.companies_house import CompaniesHouseClient
 # Note: Claude Code CLI integration (no separate import needed)
 

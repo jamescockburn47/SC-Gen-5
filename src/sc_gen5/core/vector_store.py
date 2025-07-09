@@ -32,9 +32,18 @@ class VectorStore:
         self.embedding_model_name = embedding_model
         self.index_path = Path(index_path) if index_path else None
         
-        # Initialize sentence transformer
+        # Initialize sentence transformer using memory-optimized approach
         logger.info(f"Loading embedding model: {embedding_model}")
-        self.encoder = SentenceTransformer(embedding_model)
+        try:
+            # Try to use memory-optimized embedder if available
+            from ..rag.v2.memory_optimized_models import get_memory_optimized_manager
+            manager = get_memory_optimized_manager()
+            self.encoder = manager.load_embedder()
+            logger.info("✓ Using memory-optimized embedder")
+        except Exception as e:
+            logger.warning(f"Memory-optimized embedder unavailable, loading directly: {e}")
+            self.encoder = SentenceTransformer(embedding_model, device="cpu")
+            logger.info("✓ Using direct embedder loading")
         
         # Get embedding dimension
         if dimension is None:

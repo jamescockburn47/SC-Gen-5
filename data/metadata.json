@@ -133,5 +133,46 @@
     "pages": 67,
     "file_type": "pdf",
     "ocr_engine": "tesseract"
+  },
+  "doc_91df26405d12f7aa": {
+    "doc_id": "doc_91df26405d12f7aa",
+    "filename": "test_companies_act.txt",
+    "content_hash": "91df26405d12f7aa1ffa5b247f0c7ef78d9ab3fd1c1ac00d054e795637ad8e4d",
+    "file_size": 2311,
+    "text_length": 2311,
+    "quality_score": 1.0,
+    "created_at": "2025-07-05T18:21:22.659372",
+    "extraction_method": "direct_text",
+    "pages": 1,
+    "chunk_results": {
+      "section": {
+        "chunk_ids": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "count": 5
+      },
+      "paragraph": {
+        "chunk_ids": [
+          0
+        ],
+        "count": 1
+      },
+      "sentence": {
+        "chunk_ids": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "count": 5
+      }
+    },
+    "source": "test",
+    "type": "legal_document"
   }
 }

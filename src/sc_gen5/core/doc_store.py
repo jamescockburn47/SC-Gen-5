@@ -464,3 +464,10 @@ class DocStore:
         with open(file_path, "rb") as f:
             file_bytes = f.read()
         return file_bytes, doc["filename"] 
+
+    def update_metadata(self, doc_id: str, updates: Dict[str, Any]) -> None:
+        """Update metadata for a document and save."""
+        if doc_id not in self.documents:
+            raise ValueError(f"Document {doc_id} not found")
+        self.documents[doc_id].update(updates)
+        self._save_metadata() 

@@ -1,0 +1,18 @@
+{
+  "service_id": "dd162e04",
+  "overall_status": "shutting_down",
+  "models": {
+    "embedder": "ready",
+    "utility": "ready",
+    "reasoning": "unloaded"
+  },
+  "last_heartbeat": 1751878224.7300649,
+  "crash_count": 0,
+  "startup_time": 1751781889.6950552,
+  "gpu_memory": {
+    "allocated_gb": 2.0569348335266113,
+    "cached_gb": 2.912109375,
+    "total_gb": 7.99560546875
+  },
+  "timestamp": "2025-07-07T09:50:24.730429"
+}

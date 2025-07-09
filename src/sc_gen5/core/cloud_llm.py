@@ -85,7 +85,7 @@ class CloudLLMGenerator:
         if not self._openai_client:
             self._openai_client = openai.OpenAI(api_key=api_key)
             
-        model = model or "gpt-4o"
+        model = model or "gpt-4o-mini"  # Updated to latest default
         
         try:
             response = self._openai_client.chat.completions.create(
@@ -124,7 +124,7 @@ class CloudLLMGenerator:
             genai.configure(api_key=api_key)
             self._gemini_client = True  # Just a flag to avoid reconfiguring
             
-        model = model or "gemini-1.5-flash"
+        model = model or "gemini-1.5-flash-latest"  # Updated to latest version
         
         try:
             # Configure generation parameters
@@ -170,7 +170,7 @@ class CloudLLMGenerator:
         if not self._anthropic_client:
             self._anthropic_client = anthropic.Anthropic(api_key=api_key)
             
-        model = model or "claude-3-sonnet-20240229"
+        model = model or "claude-3-5-sonnet-20241022"  # Updated to latest version
         
         try:
             response = self._anthropic_client.messages.create(
@@ -213,9 +213,9 @@ class CloudLLMGenerator:
     def get_default_model(self, provider: CloudProvider) -> str:
         """Get default model for a provider."""
         defaults = {
-            CloudProvider.OPENAI: "gpt-4o",
-            CloudProvider.GEMINI: "gemini-1.5-flash",
-            CloudProvider.CLAUDE: "claude-3-sonnet-20240229",
+            CloudProvider.OPENAI: "gpt-4o-mini",
+            CloudProvider.GEMINI: "gemini-1.5-flash-latest",
+            CloudProvider.CLAUDE: "claude-3-5-sonnet-20241022",
         }
         return defaults.get(provider, "")
 
@@ -223,20 +223,24 @@ class CloudLLMGenerator:
         """Get list of supported models for a provider."""
         models = {
             CloudProvider.OPENAI: [
-                "gpt-4o",
                 "gpt-4o-mini",
+                "gpt-4o",
                 "gpt-4-turbo",
                 "gpt-4",
                 "gpt-3.5-turbo",
             ],
             CloudProvider.GEMINI: [
+                "gemini-1.5-flash-latest",
                 "gemini-1.5-flash",
+                "gemini-1.5-pro-latest",
                 "gemini-1.5-pro",
                 "gemini-pro",
                 "gemini-pro-vision",
             ],
             CloudProvider.CLAUDE: [
                 "claude-3-5-sonnet-20241022",
+                "claude-3-5-haiku-20241022",
+                "claude-3-5-opus-20241022",
                 "claude-3-sonnet-20240229",
                 "claude-3-haiku-20240307",
                 "claude-3-opus-20240229",
@@ -257,15 +261,21 @@ class CloudLLMGenerator:
         
         cost_per_1k = {
             CloudProvider.OPENAI: {
+                "gpt-4o-mini": {"input": 0.00015, "output": 0.0006},
                 "gpt-4o": {"input": 0.005, "output": 0.015},
                 "gpt-4": {"input": 0.03, "output": 0.06},
                 "gpt-3.5-turbo": {"input": 0.001, "output": 0.002},
             },
             CloudProvider.GEMINI: {
+                "gemini-1.5-flash-latest": {"input": 0.0001, "output": 0.0004},
                 "gemini-1.5-flash": {"input": 0.0001, "output": 0.0004},
+                "gemini-1.5-pro-latest": {"input": 0.001, "output": 0.004},
                 "gemini-1.5-pro": {"input": 0.001, "output": 0.004},
             },
             CloudProvider.CLAUDE: {
+                "claude-3-5-sonnet-20241022": {"input": 0.003, "output": 0.015},
+                "claude-3-5-haiku-20241022": {"input": 0.00025, "output": 0.00125},
+                "claude-3-5-opus-20241022": {"input": 0.015, "output": 0.075},
                 "claude-3-sonnet-20240229": {"input": 0.003, "output": 0.015},
                 "claude-3-haiku-20240307": {"input": 0.00025, "output": 0.00125},
             },
@@ -305,6 +315,16 @@ class CloudLLMGenerator:
             result["models"] = self.get_supported_models(provider)
             
         except Exception as e:
-            result["error"] = str(e)
+            error_msg = str(e)
+            
+            # Provide more helpful error messages
+            if "credit balance is too low" in error_msg.lower():
+                result["error"] = f"Credit balance too low for {provider.value}. Please add credits to your account."
+            elif "api key not valid" in error_msg.lower():
+                result["error"] = f"Invalid API key for {provider.value}. Please check your API key in .env file."
+            elif "quota exceeded" in error_msg.lower():
+                result["error"] = f"Quota exceeded for {provider.value}. Please check your usage limits."
+            else:
+                result["error"] = error_msg
             
         return result 

@@ -20,120 +20,66 @@ class LegalPromptBuilder:
         analysis_style: str = "comprehensive"
     ) -> str:
         """
-        Build a structured legal analysis prompt using IRAC methodology.
+        Build an optimized legal analysis prompt using IRAC methodology for litigation workflows.
         
         Args:
             question: User's legal question
             context_documents: Retrieved document content
-            matter_type: Type of legal matter (contract, tort, criminal, etc.)
+            matter_type: Type of legal matter (litigation, tort, criminal, etc.)
             analysis_style: Style of analysis (comprehensive, concise, technical)
             
         Returns:
             Formatted prompt for legal analysis
         """
         
-        # Base legal analysis instruction with strict grounding
-        base_instruction = """You are an expert legal analyst. You must ONLY analyze information explicitly contained in the provided documents. 
+        # Optimized base instruction - reduced redundancy
+        base_instruction = """You are a litigation analyst. Analyze ONLY information explicitly stated in the documents.
 
-CRITICAL RULES:
-- NEVER invent case names, statutes, dollar amounts, dates, or legal citations
-- NEVER add details not explicitly stated in the documents
-- If information is missing, state "The documents do not specify [missing information]"
-- Quote directly from documents when making claims
-- Clearly distinguish between document content and general legal principles"""
+RULES:
+- Quote directly from documents for factual claims
+- State "Documents do not specify [X]" for missing information
+- Distinguish document content from general legal principles
+- Focus on party positions and argument strengths"""
+
+        # Streamlined IRAC instruction
+        irac_instruction = """Structure response using IRAC:
+
+ISSUE: [Key legal issues and disputes between parties]
+RULE: [Applicable legal rules - only cite if explicitly mentioned]
+ANALYSIS: [Apply rules to facts, analyze party positions and argument strengths]
+CONCLUSION: [Legal conclusion and assessment of party positions]"""
+
+        # Condensed matter-specific guidance
+        matter_focus = {
+            "litigation": "Focus: plaintiff claims, defendant defenses, burden of proof, evidence analysis",
+            "tort": "Focus: duty, breach, causation, damages assessment",
+            "criminal": "Focus: elements, defenses, procedural issues",
+            "civil_procedure": "Focus: procedural rules, jurisdiction, venue, evidence",
+            "evidence": "Focus: admissibility, relevance, probative value",
+            "constitutional": "Focus: constitutional rights, due process, equal protection"
+        }
         
-        # IRAC methodology instruction (mandatory structure)
-        irac_instruction = """
-MANDATORY: Structure your response using IRAC methodology. Begin each section with the exact headings shown:
-
-ISSUE: [Identify the key legal issues presented]
-
-RULE: [State the applicable legal rules - only cite rules explicitly mentioned in the documents or clearly state "General legal principle"]
-
-ANALYSIS: [Apply the legal rules to the specific facts from the documents]
-
-CONCLUSION: [Provide your legal conclusion based solely on the document evidence]
-
-You MUST use these exact section headings in your response.
-"""
+        matter_guidance = matter_focus.get(matter_type.lower(), "") if matter_type else ""
         
-        # Matter-specific guidance
-        matter_guidance = ""
-        if matter_type:
-            matter_specific = {
-                "contract": """
-Focus on contract formation, terms, performance, breach, and remedies.
-Consider: offer, acceptance, consideration, capacity, legality, and enforceability.
-""",
-                "tort": """
-Focus on duty, breach, causation, and damages.
-Consider: negligence, intentional torts, strict liability, and defenses.
-""",
-                "criminal": """
-Focus on elements of the offense, defenses, and procedural issues.
-Consider: mens rea, actus reus, causation, and constitutional protections.
-""",
-                "corporate": """
-Focus on corporate governance, fiduciary duties, and regulatory compliance.
-Consider: board responsibilities, shareholder rights, and statutory requirements.
-""",
-                "employment": """
-Focus on employment relationships, discrimination, and workplace rights.
-Consider: statutory protections, common law duties, and regulatory compliance.
-""",
-                "property": """
-Focus on property rights, transfers, and disputes.
-Consider: ownership, possession, easements, and regulatory restrictions.
-"""
-            }
-            matter_guidance = matter_specific.get(matter_type.lower(), "")
+        # Streamlined style instructions
+        style_focus = {
+            "comprehensive": "Provide detailed analysis with citations, evidence assessment, and case strategy implications",
+            "concise": "Provide focused analysis with key issues, essential positions, and direct application",
+            "technical": "Provide technical analysis with precise terminology, statutory analysis, and expert reasoning"
+        }
         
-        # Style-specific instructions
-        style_instruction = ""
-        if analysis_style == "comprehensive":
-            style_instruction = """
-Provide a detailed analysis with:
-- Thorough examination of all relevant legal principles
-- Citation to specific document sections where applicable
-- Discussion of potential counterarguments
-- Practical implications and recommendations
-"""
-        elif analysis_style == "concise":
-            style_instruction = """
-Provide a focused analysis with:
-- Clear identification of key issues
-- Essential legal principles
-- Direct application to the facts
-- Concise conclusion
-"""
-        elif analysis_style == "technical":
-            style_instruction = """
-Provide a technical analysis with:
-- Precise legal terminology
-- Detailed statutory and case law analysis
-- Technical procedural considerations
-- Expert-level legal reasoning
-"""
+        style_instruction = style_focus.get(analysis_style, style_focus["comprehensive"])
         
-        # Document context instruction with strict verification
-        context_instruction = f"""
-Base your analysis EXCLUSIVELY on the following legal documents:
+        # Optimized context instruction
+        context_instruction = f"""Documents: {context_documents}
 
-{context_documents}
+REQUIREMENTS:
+- Quote exact text: "According to Document X: [quote]"
+- State "Documents do not contain [topic]" for missing info
+- Label general principles as "General legal principle (not from documents)"
+- Assess argument strengths and evidence quality"""
 
-DOCUMENT ANALYSIS REQUIREMENTS:
-1. Quote exact text from documents when making factual claims
-2. Use format: "According to Document X: [exact quote]"
-3. State "The documents do not contain information about [topic]" when information is missing
-4. NEVER assume, infer, or speculate beyond what is explicitly written
-5. If you reference legal principles, clearly label them as "General legal principle (not from documents)"
-
-FORBIDDEN ACTIONS:
-- Creating case citations not in the documents
-- Inventing monetary amounts, dates, or specific legal provisions
-- Adding narrative details not present in the source material"""
-        
-        # Final prompt assembly
+        # Efficient prompt assembly
         prompt = f"""{base_instruction}
 
 {irac_instruction}
@@ -144,9 +90,9 @@ FORBIDDEN ACTIONS:
 
 {context_instruction}
 
-LEGAL QUESTION: {question}
+QUESTION: {question}
 
-Please provide your legal analysis:"""
+ANALYSIS:"""
         
         return prompt
     
@@ -186,40 +132,44 @@ Document to analyze:
 Please provide your summary:"""
     
     @staticmethod
-    def build_contract_analysis_prompt(contract_content: str, focus_area: Optional[str] = None) -> str:
-        """Build a specialized prompt for contract analysis."""
+    def build_litigation_analysis_prompt(litigation_content: str, focus_area: Optional[str] = None) -> str:
+        """Build a specialized prompt for litigation analysis."""
         
-        base_instruction = """You are a contract law expert. Analyze this contract with focus on:
+        base_instruction = """You are a litigation expert. Analyze this litigation case with focus on:
 
-FORMATION ANALYSIS:
-- Offer, acceptance, and consideration
-- Capacity of parties
-- Legality of subject matter
+PARTY POSITIONS:
+- Plaintiff's claims and legal arguments
+- Defendant's defenses and counterarguments
+- Burden of proof and evidentiary requirements
+- Key factual disputes between parties
 
-TERMS ANALYSIS:
-- Key obligations of each party
-- Performance requirements and deadlines
-- Payment terms and conditions
-- Risk allocation and liability
+LEGAL ARGUMENTS:
+- Strength of each party's legal position
+- Applicable legal standards and precedents
+- Procedural issues and jurisdictional questions
+- Potential legal defenses and counterclaims
 
-ENFORCEABILITY:
-- Potential issues with enforceability
-- Ambiguous or problematic clauses
-- Missing or inadequate provisions
+EVIDENCE ANALYSIS:
+- Strength and admissibility of evidence
+- Witness credibility and testimony analysis
+- Documentary evidence and exhibits
+- Expert testimony and technical evidence
 
-RISK ASSESSMENT:
-- Potential areas of dispute
-- Compliance requirements
-- Termination and breach scenarios"""
+CASE STRATEGY:
+- Assessment of party argument strengths
+- Potential settlement considerations
+- Trial strategy implications
+- Risk factors and outcome predictions"""
         
         focus_instruction = ""
         if focus_area:
             focus_areas = {
-                "performance": "Pay special attention to performance obligations, deadlines, and delivery requirements.",
-                "liability": "Focus on liability provisions, indemnification clauses, and risk allocation.",
-                "termination": "Examine termination clauses, notice requirements, and post-termination obligations.",
-                "compliance": "Analyze regulatory compliance requirements and legal obligations.",
-                "intellectual_property": "Focus on IP ownership, licensing, and protection provisions."
+                "liability": "Focus on liability analysis, causation, and damages assessment.",
+                "procedural": "Examine procedural issues, jurisdiction, venue, and discovery matters.",
+                "evidence": "Analyze evidence strength, admissibility, and witness credibility.",
+                "damages": "Focus on damages calculation, causation, and mitigation issues.",
+                "defenses": "Examine available defenses, counterclaims, and affirmative defenses.",
+                "settlement": "Analyze settlement prospects, risk assessment, and negotiation factors."
             }
             focus_instruction = f"\nSPECIAL FOCUS: {focus_areas.get(focus_area, '')}"
         
@@ -227,10 +177,10 @@ RISK ASSESSMENT:
 
 {focus_instruction}
 
-Contract to analyze:
-{contract_content}
+Litigation case to analyze:
+{litigation_content}
 
-Please provide your analysis:"""
+Please provide your litigation analysis:"""
     
     @staticmethod
     def get_recommended_models_for_task(task_type: str) -> Dict[str, Any]:

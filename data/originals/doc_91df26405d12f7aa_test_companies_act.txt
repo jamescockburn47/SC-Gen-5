@@ -1,0 +1,50 @@
+
+        COMPANIES ACT 2006
+        
+        Section 1: Company Formation
+        
+        (1) A company may be formed under this Act for any lawful purpose.
+        
+        (2) A company is formed when it is registered under this Act.
+        
+        Section 2: Types of Companies
+        
+        (1) A company may be either:
+            (a) a private company, or
+            (b) a public company.
+        
+        (2) A private company is a company that is not a public company.
+        
+        Section 3: Limited Liability
+        
+        (1) The liability of a company's members is limited to the amount, if any, unpaid on the shares respectively held by them.
+        
+        (2) This section applies to companies limited by shares.
+        
+        Section 4: Directors' Duties
+        
+        (1) A director of a company must act in the way he considers, in good faith, would be most likely to promote the success of the company for the benefit of its members as a whole.
+        
+        (2) In doing so, a director must have regard to:
+            (a) the likely consequences of any decision in the long term,
+            (b) the interests of the company's employees,
+            (c) the need to foster the company's business relationships with suppliers, customers and others,
+            (d) the impact of the company's operations on the community and the environment,
+            (e) the desirability of the company maintaining a reputation for high standards of business conduct.
+        
+        Section 5: Shareholders' Rights
+        
+        (1) Every member of a company has the right to:
+            (a) receive notice of general meetings,
+            (b) attend and speak at general meetings,
+            (c) vote on resolutions at general meetings.
+        
+        (2) The rights of shareholders are set out in the company's articles of association.
+        
+        DEFINITIONS:
+        
+        "company" means a company formed and registered under this Act;
+        "director" means any person occupying the position of director, by whatever name called;
+        "member" means a person who has agreed to become a member of a company and whose name is entered in its register of members;
+        "shareholder" means a member of a company who holds shares in the company.
+        

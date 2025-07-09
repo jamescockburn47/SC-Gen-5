@@ -23,6 +23,7 @@ import {
   Refresh as RefreshIcon
 } from '@mui/icons-material';
 import axios from 'axios';
+import Convert from 'ansi-to-html';
 
 interface ClaudeSession {
   session_id: string;
@@ -31,7 +32,7 @@ interface ClaudeSession {
 }
 
 interface ClaudeMessage {
-  type: 'connected' | 'output' | 'error' | 'input';
+  type: 'connected' | 'output' | 'error' | 'input' | 'input_echo';
   content: string;
   timestamp?: Date;
   working_directory?: string;
@@ -48,6 +49,15 @@ const ClaudeCliNativePage: React.FC = () => {
   const websocketRef = useRef<WebSocket | null>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  
+  // ANSI to HTML converter
+  const convert = new Convert({
+    fg: '#ffffff',
+    bg: '#1e1e1e',
+    newline: false,
+    escapeXML: true,
+    stream: false
+  });
 
   // Check Claude CLI status on mount
   useEffect(() => {
@@ -57,9 +67,23 @@ const ClaudeCliNativePage: React.FC = () => {
   // Auto-scroll terminal to bottom
   useEffect(() => {
     if (terminalRef.current) {
-      terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+      const terminal = terminalRef.current;
+      // Use requestAnimationFrame to ensure DOM is updated
+      requestAnimationFrame(() => {
+        terminal.scrollTop = terminal.scrollHeight;
+      });
     }
   }, [messages]);
+  
+  // Force scroll to bottom when new messages arrive
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (terminalRef.current) {
+        terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+      }
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [messages.length]);
 
   // Focus input when connected
   useEffect(() => {
@@ -70,9 +94,11 @@ const ClaudeCliNativePage: React.FC = () => {
 
   const checkClaudeStatus = async () => {
     try {
+      // Use proxy or direct backend URL
       const response = await axios.get('/api/claude-cli/status');
       setClaudeInfo(response.data);
       setClaudeStatus(response.data.available ? 'available' : 'unavailable');
+      console.log('Claude CLI status:', response.data);
     } catch (error) {
       console.error('Failed to check Claude CLI status:', error);
       setClaudeStatus('unavailable');
@@ -82,6 +108,7 @@ const ClaudeCliNativePage: React.FC = () => {
   const createSession = async () => {
     try {
       const response = await axios.post('/api/claude-cli/sessions');
+      console.log('Session created:', response.data);
       setCurrentSession(response.data);
       connectWebSocket(response.data);
     } catch (error) {
@@ -95,12 +122,22 @@ const ClaudeCliNativePage: React.FC = () => {
   };
 
   const connectWebSocket = (session: ClaudeSession) => {
+    // Construct WebSocket URL for backend server (port 8001)
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/claude-cli/${session.session_id}`;
+    const hostname = window.location.hostname;
+    const wsUrl = `${protocol}//${hostname}:8001/ws/claude-cli/${session.session_id}`;
+    
+    console.log('Connecting to WebSocket:', wsUrl);
+    
+    // Clear any existing connection
+    if (websocketRef.current) {
+      websocketRef.current.close();
+    }
     
     websocketRef.current = new WebSocket(wsUrl);
     
     websocketRef.current.onopen = () => {
+      console.log('WebSocket connected successfully');
       setIsConnected(true);
       addMessage({
         type: 'connected',
@@ -112,11 +149,13 @@ const ClaudeCliNativePage: React.FC = () => {
     websocketRef.current.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
+        console.log('Received message:', message);
         addMessage({
           ...message,
           timestamp: new Date()
         });
       } catch (error) {
+        console.error('Message parse error:', error);
         addMessage({
           type: 'error',
           content: `Message parse error: ${error}`,
@@ -125,19 +164,37 @@ const ClaudeCliNativePage: React.FC = () => {
       }
     };
     
-    websocketRef.current.onclose = () => {
+    websocketRef.current.onclose = (event) => {
+      console.log('WebSocket closed:', event.code, event.reason);
       setIsConnected(false);
       addMessage({
         type: 'error',
-        content: 'Disconnected from Claude CLI',
+        content: `Disconnected from Claude CLI (Code: ${event.code})`,
         timestamp: new Date()
       });
+      
+      // Attempt to reconnect after 3 seconds if not manually closed
+      if (event.code !== 1000 && event.code !== 1001) {
+        addMessage({
+          type: 'error',
+          content: 'Connection lost. Attempting to reconnect in 3 seconds...',
+          timestamp: new Date()
+        });
+        
+        setTimeout(() => {
+          if (currentSession && !isConnected) {
+            console.log('Attempting to reconnect...');
+            connectWebSocket(currentSession);
+          }
+        }, 3000);
+      }
     };
     
     websocketRef.current.onerror = (error) => {
+      console.error('WebSocket error:', error);
       addMessage({
         type: 'error',
-        content: `WebSocket error: ${error}`,
+        content: `WebSocket connection error. Check if backend is running on port 8001.`,
         timestamp: new Date()
       });
     };
@@ -166,14 +223,7 @@ const ClaudeCliNativePage: React.FC = () => {
   const sendInput = () => {
     if (!currentInput.trim() || !websocketRef.current || !isConnected) return;
 
-    // Add input to terminal display
-    addMessage({
-      type: 'input',
-      content: `> ${currentInput}`,
-      timestamp: new Date()
-    });
-
-    // Send to Claude CLI
+    // Send to Claude CLI (the server will echo it back)
     websocketRef.current.send(JSON.stringify({
       type: 'input',
       content: currentInput
@@ -181,6 +231,7 @@ const ClaudeCliNativePage: React.FC = () => {
 
     setCurrentInput('');
   };
+  
 
   const sendInterrupt = () => {
     if (websocketRef.current && isConnected) {
@@ -198,6 +249,20 @@ const ClaudeCliNativePage: React.FC = () => {
   const addMessage = useCallback((message: ClaudeMessage) => {
     setMessages(prev => [...prev, message]);
   }, []);
+  
+  // Process terminal content to handle ANSI codes
+  const processTerminalContent = (content: string, type: string) => {
+    if (type === 'output') {
+      // Convert ANSI codes to HTML for terminal output
+      return convert.toHtml(content);
+    }
+    return content;
+  };
+  
+  // Check if content contains ANSI escape codes
+  const hasAnsiCodes = (content: string) => {
+    return /\u001b\[[0-9;]*[a-zA-Z]/.test(content);
+  };
 
   const clearTerminal = () => {
     setMessages([]);
@@ -218,6 +283,7 @@ const ClaudeCliNativePage: React.FC = () => {
       case 'output': return '#ffffff';
       case 'error': return '#f44336';
       case 'input': return '#2196f3';
+      case 'input_echo': return '#2196f3';
       default: return '#ffffff';
     }
   };
@@ -319,8 +385,27 @@ const ClaudeCliNativePage: React.FC = () => {
                   fontSize: '14px',
                   p: 2,
                   overflow: 'auto',
+                  overflowY: 'scroll',
                   whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word'
+                  wordBreak: 'break-word',
+                  maxHeight: '500px',
+                  minHeight: '400px',
+                  '&::-webkit-scrollbar': {
+                    width: '8px',
+                  },
+                  '&::-webkit-scrollbar-track': {
+                    background: '#2d2d2d',
+                  },
+                  '&::-webkit-scrollbar-thumb': {
+                    background: '#555',
+                    borderRadius: '4px',
+                  },
+                  '&::-webkit-scrollbar-thumb:hover': {
+                    background: '#777',
+                  },
+                  '& .ansi-colors': {
+                    fontFamily: 'inherit'
+                  }
                 }}
               >
                 {messages.length === 0 ? (
@@ -330,15 +415,26 @@ const ClaudeCliNativePage: React.FC = () => {
                 ) : (
                   messages.map((message, index) => (
                     <Box key={index} sx={{ color: getMessageColor(message.type), mb: 0.5 }}>
-                      {message.type === 'input' ? (
+                      {(message.type === 'input' || message.type === 'input_echo') ? (
                         <span style={{ color: '#2196f3' }}>{message.content}</span>
+                      ) : message.type === 'output' && hasAnsiCodes(message.content) ? (
+                        <div 
+                          dangerouslySetInnerHTML={{ 
+                            __html: processTerminalContent(message.content, message.type) 
+                          }}
+                          style={{ 
+                            whiteSpace: 'pre-wrap',
+                            fontFamily: 'Monaco, Consolas, "Courier New", monospace'
+                          }}
+                        />
                       ) : (
-                        message.content
+                        <span style={{ whiteSpace: 'pre-wrap' }}>{message.content}</span>
                       )}
                     </Box>
                   ))
                 )}
               </Paper>
+              
               
               {/* Input Area */}
               <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
@@ -370,6 +466,11 @@ const ClaudeCliNativePage: React.FC = () => {
               
               <Typography variant="caption" sx={{ mt: 1, color: 'text.secondary' }}>
                 Press Enter to send, Ctrl+C to interrupt
+                {isConnected && messages.length > 0 && (
+                  <Box component="span" sx={{ display: 'block', mt: 1 }}>
+                    💡 For API key dialog, type "1" and press Enter to use the available key
+                  </Box>
+                )}
               </Typography>
             </CardContent>
           </Card>
