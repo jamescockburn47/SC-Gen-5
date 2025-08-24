@@ -64,6 +64,8 @@ cd SC-Gen-5
 
 # Install Python dependencies
 pip install -r requirements.txt
+# Install in editable mode for development and testing
+pip install -e .[dev]
 
 # Install frontend dependencies
 cd frontend
@@ -79,15 +81,13 @@ cd ..
 ### **Launch Options**
 
 ```bash
-# Enhanced desktop launcher (Recommended)
-python desktop_launcher.py
-
-# Start minimized to system tray
-python desktop_launcher.py --minimized
-
-# Original sophisticated UI launcher
-python start_sophisticated_ui.py
+# Linux/WSL
+./start_sc_gen5.sh start      # start backend & frontend
+./start_sc_gen5.sh stop       # stop services
+./start_sc_gen5.sh restart    # restart services
 ```
+
+Windows users can double-click `SC_Gen5_Launcher.bat` to start the app and `Stop_SC_Gen5.bat` to stop it.
 
 ### **Access Points**
 - **Web Interface**: http://localhost:3000
@@ -133,9 +133,9 @@ python start_sophisticated_ui.py
 
 ```
 SC-Gen-5/
-├── desktop_launcher.py              # Enhanced desktop launcher
-├── start_sophisticated_ui.py        # Original launcher
-├── launcher_config.json             # Launcher configuration
+├── start_sc_gen5.sh           # Master launch script
+├── SC_Gen5_Launcher.bat       # Windows launcher
+├── Stop_SC_Gen5.bat           # Windows stop script
 ├── 
 ├── frontend/                        # React application
 │   ├── src/
@@ -247,7 +247,7 @@ python -m pytest tests/
 ### **Adding Features**
 1. **Frontend Pages**: Create components in `frontend/src/pages/`
 2. **API Endpoints**: Add routes in `src/sc_gen5/services/`
-3. **Launcher Features**: Extend `EnhancedDesktopLauncher` class
+3. **Launcher Features**: Extend `start_sc_gen5.sh`
 4. **Monitoring**: Add metrics to `SystemMonitor` class
 
 ## 📊 **Performance**

@@ -27,6 +27,8 @@ We appreciate your interest in contributing to SC Gen 5! This document provides 
 3. **Install Dependencies**
    ```bash
    pip install -r requirements.txt
+   # Install in editable mode for development and testing
+   pip install -e .[dev]
    cd frontend && npm install
    cd ../terminal-server && npm install
    cd ..
@@ -34,7 +36,7 @@ We appreciate your interest in contributing to SC Gen 5! This document provides 
 
 4. **Run Development Environment**
    ```bash
-   python desktop_launcher.py
+   ./start_sc_gen5.sh start
    ```
 
 ## 📋 **How to Contribute**
@@ -81,7 +83,7 @@ We appreciate your interest in contributing to SC Gen 5! This document provides 
    cd frontend && npm test
    
    # Test the launcher
-   python desktop_launcher.py --test
+   ./start_sc_gen5.sh status
    ```
 
 4. **Commit Your Changes**
@@ -278,7 +280,7 @@ FastAPI automatically generates OpenAPI docs, but ensure:
 
 1. **Backend Services**: Add to `src/sc_gen5/services/`
 2. **Frontend Pages**: Add to `frontend/src/pages/`
-3. **Launcher Features**: Extend `desktop_launcher.py`
+3. **Launcher Features**: Extend `start_sc_gen5.sh`
 4. **Integrations**: Add to `src/sc_gen5/integrations/`
 
 ### **Database Changes**
