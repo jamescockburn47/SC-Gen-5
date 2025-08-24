@@ -1,9 +1,13 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
+// Mock axios to prevent ESM import issues during tests
+jest.mock('axios', () => ({ get: jest.fn() }));
+
 import App from './App';
 
-test('renders learn react link', () => {
+test('renders application title', () => {
   render(<App />);
-  const linkElement = screen.getByText(/learn react/i);
-  expect(linkElement).toBeInTheDocument();
+  // The title appears in both the sidebar and top bar; check at least one instance
+  const titleElement = screen.getAllByText(/LexCognito/i)[0];
+  expect(titleElement).toBeInTheDocument();
 });
