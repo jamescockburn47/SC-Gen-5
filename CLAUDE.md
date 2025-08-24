@@ -134,7 +134,7 @@ pip install -e ".[enhanced]"
 3. Add corresponding frontend components in `frontend/src/`
 4. Write tests in `tests/`
 5. Run quality checks: `ruff check`, `black`, `mypy`
-6. Test full stack: `python3 run_services.py`
+6. Test full stack: ./start_sc_gen5.sh start
 
 ### Model Configuration
 - **Utility Model**: TinyLlama-1.1B (for filtering/rewriting)
