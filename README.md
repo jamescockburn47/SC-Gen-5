@@ -247,7 +247,7 @@ python -m pytest tests/
 ### **Adding Features**
 1. **Frontend Pages**: Create components in `frontend/src/pages/`
 2. **API Endpoints**: Add routes in `src/sc_gen5/services/`
-3. **Launcher Features**: Extend `EnhancedDesktopLauncher` class
+3. **Launcher Features**: Extend `start_sc_gen5.sh`
 4. **Monitoring**: Add metrics to `SystemMonitor` class
 
 ## 📊 **Performance**
