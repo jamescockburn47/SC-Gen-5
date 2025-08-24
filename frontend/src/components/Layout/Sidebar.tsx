@@ -55,8 +55,10 @@ const Sidebar: React.FC<SidebarProps> = ({ drawerWidth, open }) => {
         '& .MuiDrawer-paper': {
           width: drawerWidth,
           boxSizing: 'border-box',
-          bgcolor: 'primary.main',
-          color: 'white'
+          // Modern dark gradient with subtle divider
+          background: 'linear-gradient(180deg, #1e1e1e 0%, #121212 100%)',
+          color: 'white',
+          borderRight: '1px solid rgba(255,255,255,0.12)'
         },
       }}
       variant="persistent"
@@ -94,28 +96,23 @@ const Sidebar: React.FC<SidebarProps> = ({ drawerWidth, open }) => {
               sx={{
                 borderRadius: 2,
                 mx: 1,
-                color: 'white',
+                color: 'rgba(255,255,255,0.8)',
                 '&:hover': {
-                  bgcolor: 'rgba(255,255,255,0.1)'
+                  bgcolor: 'rgba(255,255,255,0.08)'
                 },
                 ...(location.pathname === item.path && {
-                  bgcolor: 'secondary.main',
-                  color: 'primary.main',
+                  bgcolor: 'primary.main',
+                  color: '#fff',
                   '&:hover': {
-                    bgcolor: 'secondary.light'
+                    bgcolor: 'primary.dark'
                   }
                 })
               }}
             >
-              <ListItemIcon 
-                sx={{ 
-                  color: location.pathname === item.path ? 'primary.main' : 'white',
-                  minWidth: 40
-                }}
-              >
+              <ListItemIcon sx={{ color: 'inherit', minWidth: 40 }}>
                 {item.icon}
               </ListItemIcon>
-              <ListItemText 
+              <ListItemText
                 primary={item.text}
                 primaryTypographyProps={{
                   fontSize: '0.9rem',

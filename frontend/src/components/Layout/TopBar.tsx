@@ -68,6 +68,10 @@ const TopBar: React.FC<TopBarProps> = ({ drawerWidth, sidebarOpen, toggleSidebar
   return (
     <AppBar
       position="fixed"
+      /*
+       * Use a translucent background with blur for a modern "glass" effect.
+       * The bar adapts its width and margin when the sidebar is toggled.
+       */
       sx={{
         width: sidebarOpen ? `calc(100% - ${drawerWidth}px)` : '100%',
         ml: sidebarOpen ? `${drawerWidth}px` : 0,
@@ -75,9 +79,11 @@ const TopBar: React.FC<TopBarProps> = ({ drawerWidth, sidebarOpen, toggleSidebar
           easing: theme.transitions.easing.sharp,
           duration: theme.transitions.duration.leavingScreen,
         }),
-        bgcolor: 'white',
-        color: 'primary.main',
-        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+        bgcolor: 'rgba(18,18,18,0.8)',
+        backdropFilter: 'blur(8px)',
+        borderBottom: '1px solid rgba(255,255,255,0.12)',
+        color: 'text.primary',
+        boxShadow: 'none'
       }}
     >
       <Toolbar>

@@ -1,6 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { ThemeProvider, createTheme } from '@mui/material/styles';
+import { ThemeProvider } from '@mui/material/styles';
 import { CssBaseline, Box } from '@mui/material';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Sidebar from './components/Layout/Sidebar';
@@ -14,48 +14,7 @@ import CloudConsultation from './pages/CloudConsultation';
 import AnalyticsPage from './pages/AnalyticsPage';
 import ClaudeCliNativePage from './pages/ClaudeCliNativePage';
 import DiagnosticsPage from './pages/DiagnosticsPage';
-
-// LexCognito theme
-const theme = createTheme({
-  palette: {
-    mode: 'light',
-    primary: {
-      main: '#1f4e79', // Legal blue
-      dark: '#0d2a47',
-      light: '#4a73a8'
-    },
-    secondary: {
-      main: '#c8a882', // Legal gold
-      dark: '#8b7355',
-      light: '#e6c5a3'
-    },
-    background: {
-      default: '#fafafa',
-      paper: '#ffffff'
-    }
-  },
-  typography: {
-    fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
-    h4: {
-      fontWeight: 600,
-      color: '#1f4e79'
-    },
-    h5: {
-      fontWeight: 500,
-      color: '#1f4e79'
-    }
-  },
-  components: {
-    MuiDrawer: {
-      styleOverrides: {
-        paper: {
-          backgroundColor: '#1f4e79',
-          color: 'white'
-        }
-      }
-    }
-  }
-});
+import theme from './theme';
 
 const drawerWidth = 280;
 
