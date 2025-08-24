@@ -27,6 +27,8 @@ We appreciate your interest in contributing to SC Gen 5! This document provides 
 3. **Install Dependencies**
    ```bash
    pip install -r requirements.txt
+   # Install in editable mode for development and testing
+   pip install -e .[dev]
    cd frontend && npm install
    cd ../terminal-server && npm install
    cd ..
