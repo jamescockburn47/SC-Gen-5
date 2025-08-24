@@ -79,15 +79,13 @@ cd ..
 ### **Launch Options**
 
 ```bash
-# Enhanced desktop launcher (Recommended)
-python desktop_launcher.py
-
-# Start minimized to system tray
-python desktop_launcher.py --minimized
-
-# Original sophisticated UI launcher
-python start_sophisticated_ui.py
+# Linux/WSL
+./start_sc_gen5.sh start      # start backend & frontend
+./start_sc_gen5.sh stop       # stop services
+./start_sc_gen5.sh restart    # restart services
 ```
+
+Windows users can double-click `SC_Gen5_Launcher.bat` to start the app and `Stop_SC_Gen5.bat` to stop it.
 
 ### **Access Points**
 - **Web Interface**: http://localhost:3000
@@ -133,9 +131,9 @@ python start_sophisticated_ui.py
 
 ```
 SC-Gen-5/
-├── desktop_launcher.py              # Enhanced desktop launcher
-├── start_sophisticated_ui.py        # Original launcher
-├── launcher_config.json             # Launcher configuration
+├── start_sc_gen5.sh           # Master launch script
+├── SC_Gen5_Launcher.bat       # Windows launcher
+├── Stop_SC_Gen5.bat           # Windows stop script
 ├── 
 ├── frontend/                        # React application
 │   ├── src/

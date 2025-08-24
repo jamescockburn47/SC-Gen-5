@@ -29,6 +29,10 @@ OLD_SCRIPTS=(
     "start_sophisticated_ui.py"
     "create_shortcut.py"
     "create_scgen5_shortcut.py"
+    "START_SC_GEN5"
+    "run_wsl_full.bat"
+    "test_windows_launcher.bat"
+    "setup.bat"
 )
 
 echo "Removing old startup scripts..."

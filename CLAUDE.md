@@ -57,16 +57,14 @@ npm start              # Start WebSocket terminal server
 ### Full Stack Launch
 ```bash
 # Start all services together (RECOMMENDED)
-python3 run_services.py
+# Start SC Gen 5
+./start_sc_gen5.sh start
 
-# Enhanced desktop launcher
-python desktop_launcher.py
+# Stop services
+./start_sc_gen5.sh stop
 
-# Start minimized to system tray
-python desktop_launcher.py --minimized
-
-# Original sophisticated UI launcher
-python start_sophisticated_ui.py
+# Restart services
+./start_sc_gen5.sh restart
 ```
 
 ### Testing
@@ -121,7 +119,7 @@ pip install -e ".[enhanced]"
 - `src/sc_gen5/services/consult_service.py` - Legacy consultation API
 - `src/sc_gen5/services/ch_ingest_service.py` - Companies House ingestion
 - `frontend/src/App.tsx` - Main React application
-- `desktop_launcher.py` - Enhanced desktop launcher
+- `start_sc_gen5.sh` - Master launch script
 
 ### Data Directories
 - `data/uploads/` - Uploaded documents

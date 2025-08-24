@@ -227,8 +227,8 @@ def main():
     print("\n" + "=" * 40)
     print("Installation completed!")
     print("\nNext steps:")
-    print("1. Run: python test_shortcut.py")
-    print("2. Run: python desktop_launcher.py")
+    print("1. Run: python create_desktop_shortcut.py")
+    print("2. Run: ./start_sc_gen5.sh start")
     print("3. Check the desktop for the SC Gen 5 shortcut")
 
 if __name__ == "__main__":
