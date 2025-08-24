@@ -64,6 +64,8 @@ cd SC-Gen-5
 
 # Install Python dependencies
 pip install -r requirements.txt
+# Install in editable mode for development and testing
+pip install -e .[dev]
 
 # Install frontend dependencies
 cd frontend
